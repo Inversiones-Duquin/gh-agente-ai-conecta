@@ -1,3 +1,6 @@
 venv
 .claude
 __pycache__
+*.zip
+.agents
+skills-lock.json

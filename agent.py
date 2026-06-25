@@ -12,6 +12,8 @@ import os
 # Necesario para que las librerías (pydantic, strands, dateutil, etc.)
 # encuentren six.py y typing_extensions.py que están en /libs
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
+# Necesario para que dw_api_client y dw_tools sean importables desde mcp/i2dw/
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcp", "i2dw"))
 
 import logging
 import time
@@ -83,8 +85,8 @@ REPORT_LAMBDA = os.getenv("REPORT_GENERATOR_FUNCTION_NAME",
 REPORT_INVOCATION = os.getenv("REPORT_GENERATOR_INVOCATION_TYPE",
                               "RequestResponse")
 
-MCP_GATEWAY_ID = "api-i2dw-mcp-6vfy0ckj2f"
-MCP_GATEWAY_REGION = os.getenv("MCP_GATEWAY_REGION", REGION)
+MCP_GATEWAY_ID = os.getenv("MCP_GATEWAY_ID", "i2d-dw-gateway-lv6e91yj9s")
+MCP_GATEWAY_REGION = os.getenv("MCP_GATEWAY_REGION", "us-east-2")
 
 # =============================================================================
 # Estado global
@@ -279,41 +281,42 @@ def invoke(payload, context):
             },
         )
 
-        # System prompt + MCP
+        # System prompt + MCP (con prompt caching)
         system_prompt = get_system_prompt()
         mcp_section = build_mcp_prompt_section()
         if mcp_section:
             system_prompt += "\n" + mcp_section
 
+        # Envolver en SystemContentBlock con cache point para reducir costos 90%
+        # Nova Lite: min 1,536 tokens para caching → ~6K chars ya califica
+        cached_system_prompt = [
+            {"text": system_prompt},
+            {"cachePoint": {"type": "default"}},
+        ]
+
         # Herramientas
         tools = get_agent_tools() + [search_knowledge_base]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
-        model_id = MODEL_ID
+        # Usar inference profile directamente — el model ID base no soporta
+        # on-demand throughput y el reintento crea un segundo Agent en la misma
+        # sesión, lo cual no está permitido.
+        model_id = INFERENCE_PROFILE_ID or MODEL_ID
 
-        agent = Agent(model=model_id,
+        # Modelo con max_tokens explícito para optimizar cuota (Critical Warning de Bedrock)
+        # Sin max_tokens explícito, Bedrock reserva el máximo del modelo (8K tokens)
+        # → desperdicia cuota y puede causar ThrottlingException
+        from strands.models.bedrock import BedrockModel
+        model = BedrockModel(model_id=model_id, max_tokens=2048)
+
+        agent = Agent(model=model,
                       session_manager=session_mgr,
-                      system_prompt=system_prompt,
+                      system_prompt=cached_system_prompt,
                       tools=tools)
 
         logger.debug("Agente ejecutando con modelo=%s, tools=%d", model_id,
                      len(tools))
 
-        try:
-            result = agent(prompt)
-        except Exception as e:
-            err = str(e)
-            if ("ConverseStream" in err and "inference profile" in err.lower()
-                    and INFERENCE_PROFILE_ID):
-                logger.warning("Reintentando con inference profile: %s",
-                               INFERENCE_PROFILE_ID)
-                model_id = INFERENCE_PROFILE_ID
-                agent = Agent(model=model_id,
-                              session_manager=session_mgr,
-                              system_prompt=system_prompt,
-                              tools=tools)
-                result = agent(prompt)
-            else:
-                raise
+        result = agent(prompt)
 
         response_text = result.message.get("content",
                                            [{}])[0].get("text", str(result))

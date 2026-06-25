@@ -1,0 +1,57 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "i2d_dw — Centros",
+    "description": "Endpoint de centros de operación del Data Warehouse i2d_dw. Requiere token válido y permiso `centros:read`.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {"url": "https://api.inversionesduquin.online", "description": "API i2d_dw — Producción"}
+  ],
+  "paths": {
+    "/api/v2/centros/all": {
+      "get": {
+        "tags": ["centros"],
+        "summary": "Listar todos los centros de operación",
+        "description": "Obtiene la lista completa de todos los centros de operación registrados en el sistema. Requiere permiso `centros:read`.",
+        "operationId": "get_centros_all",
+        "responses": {
+          "200": {
+            "description": "Lista de centros de operación",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CentrosResponse"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "429": {"$ref": "#/components/responses/RateLimited"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CentroRecord": {
+        "type": "object",
+        "properties": {
+          "id_co": {"type": "integer", "description": "ID del centro de operaciones"},
+          "nombre": {"type": "string", "description": "Nombre / descripción"}
+        }
+      },
+      "CentrosResponse": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string", "example": "success"},
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/CentroRecord"}}
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {"detail": {"type": "string"}}
+      }
+    },
+    "responses": {
+      "Unauthorized": {"description": "Token inválido, revocado, expirado o ausente", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}},
+      "Forbidden": {"description": "Sin permiso RBAC", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}},
+      "RateLimited": {"description": "Rate limit excedido (100 req/min)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}}
+    }
+  }
+}

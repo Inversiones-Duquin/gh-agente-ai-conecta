@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from dw_tools import DW_TOOLS
 from mcp_gateway_client import MCPGatewayClient
 from strands import tool
 
@@ -164,5 +165,9 @@ def build_mcp_prompt_section() -> str:
 
 
 def get_agent_tools() -> list:
-    """Devuelve la lista de herramientas @tool para pasar al Agent."""
-    return [mcp_call_tool, mcp_list_available_tools]
+    """Devuelve la lista de herramientas @tool para pasar al Agent.
+
+    Incluye las 12 herramientas directas del DW (dw_*) más las herramientas
+    MCP para tool discovery y fallback.
+    """
+    return DW_TOOLS + [mcp_call_tool, mcp_list_available_tools]
