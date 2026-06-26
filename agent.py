@@ -12,8 +12,9 @@ import os
 # Necesario para que las librerías (pydantic, strands, dateutil, etc.)
 # encuentren six.py y typing_extensions.py que están en /libs
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
-# Necesario para que dw_api_client y dw_tools sean importables desde mcp/i2dw/
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcp", "i2dw"))
+# Necesario para que los modulos en mcps/ sean importables
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps", "i2dw"))
 
 import logging
 import time
@@ -80,10 +81,8 @@ DW_API_ID_CIA_DEFAULT = os.getenv("DW_API_ID_CIA_DEFAULT", "1")
 DW_API_MAX_ROWS = int(os.getenv("DW_API_MAX_ROWS", "50"))
 DW_API_TIMEOUT = int(os.getenv("DW_API_REQUEST_TIMEOUT", "60"))
 
-REPORT_LAMBDA = os.getenv("REPORT_GENERATOR_FUNCTION_NAME",
-                          "report-generator-lambda")
-REPORT_INVOCATION = os.getenv("REPORT_GENERATOR_INVOCATION_TYPE",
-                              "RequestResponse")
+REPORTS_GATEWAY_ID = os.getenv("REPORTS_GATEWAY_ID", "reports-gateway-yt5gh2old4")
+REPORTS_GATEWAY_REGION = os.getenv("REPORTS_GATEWAY_REGION", "us-east-2")
 
 MCP_GATEWAY_ID = os.getenv("MCP_GATEWAY_ID", "i2d-dw-gateway-lv6e91yj9s")
 MCP_GATEWAY_REGION = os.getenv("MCP_GATEWAY_REGION", "us-east-2")
@@ -237,6 +236,61 @@ def search_knowledge_base(query: str) -> dict:
 
 
 # =============================================================================
+# Herramienta: Fecha actual
+# =============================================================================
+@tool
+def fecha_actual() -> dict:
+    """Retorna la fecha actual del sistema. Usa esta herramienta para calcular
+    periodos relativos como 'semana pasada', 'este mes', 'ayer', 'ultimos 7 dias', etc.
+    No necesitas argumentos.
+    """
+    import json
+    from datetime import datetime
+    hoy = datetime.now()
+    return {"status": "success", "content": [{"text": json.dumps({
+        "fecha": hoy.strftime("%Y-%m-%d"),
+        "dia_semana": hoy.strftime("%A"),
+        "semana": hoy.isocalendar()[1],
+        "mes": hoy.month,
+        "ano": hoy.year,
+    }, ensure_ascii=False)}]}
+
+
+# =============================================================================
+# Herramientas: Reportes (Lambda directa)
+# =============================================================================
+def _invoke_reports_lambda(tool_name: str, args: dict) -> dict:
+    """Llama la Lambda de reportes via boto3."""
+    import json, boto3 as _boto3
+    payload = {"toolName": tool_name, "arguments": args}
+    lam = _boto3.client("lambda", region_name="us-east-2")
+    resp = lam.invoke(FunctionName="reports-handler", InvocationType="RequestResponse", Payload=json.dumps(payload))
+    result = json.loads(resp["Payload"].read())
+    if result.get("isError"):
+        return {"status": "error", "content": [{"text": result.get("content", [{}])[0].get("text", "Error en reporte")}]}
+    return {"status": "success", "content": [{"text": result.get("content", [{}])[0].get("text", str(result))}]}
+
+
+@tool
+def generar_reporte_ventas(id_co: int, fecha_desde: str = "", fecha_hasta: str = "") -> dict:
+    """Genera reporte HTML interactivo de ventas con graficos Chart.js, KPIs y tabla.
+
+    Args:
+        id_co: ID del centro de operaciones (ej: 1 para Bazurto).
+        fecha_desde: Fecha inicio YYYY-MM-DD (opcional, default 30 dias atras).
+        fecha_hasta: Fecha fin YYYY-MM-DD (opcional, default hoy).
+
+    Retorna URL de descarga del reporte.
+    """
+    try:
+        return _invoke_reports_lambda("generar_reporte_ventas",
+            {"id_co": id_co, "fecha_desde": fecha_desde or None, "fecha_hasta": fecha_hasta or None})
+    except Exception as e:
+        logger.error("Error generando reporte: %s", e)
+        return {"status": "error", "content": [{"text": "El servicio de reportes no esta disponible."}]}
+
+
+# =============================================================================
 # Entrypoint
 # =============================================================================
 @app.entrypoint
@@ -290,12 +344,18 @@ def invoke(payload, context):
         # Envolver en SystemContentBlock con cache point para reducir costos 90%
         # Nova Lite: min 1,536 tokens para caching → ~6K chars ya califica
         cached_system_prompt = [
-            {"text": system_prompt},
-            {"cachePoint": {"type": "default"}},
+            {
+                "text": system_prompt
+            },
+            {
+                "cachePoint": {
+                    "type": "default"
+                }
+            },
         ]
 
         # Herramientas
-        tools = get_agent_tools() + [search_knowledge_base]
+        tools = get_agent_tools() + [search_knowledge_base, fecha_actual, generar_reporte_ventas]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
         # Usar inference profile directamente — el model ID base no soporta
         # on-demand throughput y el reintento crea un segundo Agent en la misma

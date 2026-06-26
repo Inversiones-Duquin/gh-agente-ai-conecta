@@ -4,3 +4,6 @@ __pycache__
 *.zip
 .agents
 skills-lock.json
+CLAUDE.md
+
+.vscode

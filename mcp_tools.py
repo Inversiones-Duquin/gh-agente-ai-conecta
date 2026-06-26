@@ -16,6 +16,7 @@ logger = logging.getLogger("bedrock-agentcore-agent")
 # Estado global del módulo
 # ---------------------------------------------------------------------------
 mcp_client: Optional[MCPGatewayClient] = None
+_reports_client: Any = None  # HTTP+SigV4 client (bedrock-agentcore-runtime no existe)
 
 _tools_cache: Optional[List[Dict[str, Any]]] = None
 _tools_cache_ts: float = 0.0
@@ -27,17 +28,53 @@ _TOOLS_CACHE_TTL = 300  # 5 minutos
 # ---------------------------------------------------------------------------
 
 
+class _HttpMCPClient:
+    """Cliente MCP ligero via HTTP+SigV4 (no usa bedrock-agentcore-runtime)."""
+    def __init__(self, gateway_id, region):
+        import boto3, requests
+        from botocore.auth import SigV4Auth
+        from botocore.awsrequest import AWSRequest
+        self.gateway_id = gateway_id
+        self.region = region
+        self.url = f"https://{gateway_id}.gateway.bedrock-agentcore.{region}.amazonaws.com/mcp"
+        self.session = boto3.Session(region_name=region)
+        self.SigV4Auth = SigV4Auth
+        self.AWSRequest = AWSRequest
+        self.requests = requests
+
+    def call_tool(self, name, args):
+        import json
+        creds = self.session.get_credentials()
+        body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args or {}}})
+        req = self.AWSRequest(method="POST",url=self.url,data=body,headers={"Content-Type":"application/json"})
+        self.SigV4Auth(creds,"bedrock-agentcore",self.region).add_auth(req)
+        resp = self.requests.post(self.url,data=body,headers=dict(req.headers),timeout=60)
+        data = resp.json()
+        if "error" in data:
+            return {"error": data["error"].get("message","Error")}
+        r = data.get("result",{})
+        if r.get("isError"):
+            return {"error": r.get("content",[{}])[0].get("text","Error")}
+        return r
+
+
 def init_mcp_client(gateway_id: str, region: str) -> Optional[MCPGatewayClient]:
-    """Inicializa (o retorna) el cliente MCP Gateway."""
-    global mcp_client
-    if mcp_client is not None:
-        return mcp_client
-    try:
-        mcp_client = MCPGatewayClient(gateway_id, region)
-        logger.info("MCP Gateway inicializado: %s", gateway_id)
-    except Exception as e:
-        logger.warning("MCP Gateway no disponible (se continúa sin MCP): %s", e)
-        mcp_client = None
+    """Inicializa los clientes MCP Gateway (i2dw + reports)."""
+    global mcp_client, _reports_client
+    import os
+    if mcp_client is None:
+        try:
+            mcp_client = MCPGatewayClient(gateway_id, region)
+            logger.info("MCP i2dw inicializado: %s", gateway_id)
+        except Exception as e:
+            logger.warning("MCP i2dw no disponible: %s", e)
+    reports_id = os.getenv("REPORTS_GATEWAY_ID", "reports-gateway-yt5gh2old4")
+    if _reports_client is None:
+        try:
+            _reports_client = _HttpMCPClient(reports_id, region)
+            logger.info("MCP reports inicializado (HTTP): %s", reports_id)
+        except Exception as e:
+            logger.warning("MCP reports no disponible: %s", e)
     return mcp_client
 
 
@@ -48,35 +85,29 @@ def init_mcp_client(gateway_id: str, region: str) -> Optional[MCPGatewayClient]:
 
 @tool
 def mcp_call_tool(tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> dict:
-    """Ejecuta una herramienta del gateway MCP externo.
+    """Llama una herramienta via MCP Gateway. Solo para reportes (generar_reporte_*).
 
-    Revisa en el system prompt la lista de herramientas MCP disponibles antes
-    de usar esta función. Usa el nombre exacto de la herramienta (sin prefijo).
+    Para datos (ventas, productos, centros, proveedores) usa las herramientas dw_* directamente.
+    Para reportes usa mcp_call_tool con el Gateway de reportes.
 
     #Args:
-        tool_name: Nombre exacto de la herramienta MCP a ejecutar (sin 'mcp_').
+        tool_name: Nombre de la herramienta MCP (ej: generar_reporte_ventas).
         arguments: Diccionario con los argumentos de la herramienta.
 
     #Returns:
-        Resultado de la herramienta MCP en formato JSON.
+        Resultado de la herramienta MCP.
     """
-    if mcp_client is None:
-        return {"status": "error", "content": [{"text": "MCP Gateway no disponible"}]}
+    if _reports_client is None:
+        return {"status": "error", "content": [{"text": "Gateway de reportes no disponible"}]}
 
     args = arguments or {}
-    logger.info("MCP call: %s", tool_name)
-    result = mcp_client.call_tool(tool_name, args)
+    logger.info("MCP reports call: %s", tool_name)
+    result = _reports_client.call_tool(tool_name, args)
 
     if "error" in result:
-        return {
-            "status": "error",
-            "content": [{"text": f"Error en MCP {tool_name}: {result['error']}"}],
-        }
+        return {"status": "error", "content": [{"text": f"Error en reporte: {result['error']}"}]}
 
-    return {
-        "status": "success",
-        "content": [{"text": MCPGatewayClient.format_tool_result(result)}],
-    }
+    return {"status": "success", "content": [{"text": str(result.get("content", [{}])[0].get("text", str(result)))}]}
 
 
 @tool
