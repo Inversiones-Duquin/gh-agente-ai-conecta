@@ -1,0 +1,95 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "i2d_dw — Auth",
+    "description": "Endpoint de validación de tokens. Requiere PAT en header Authorization. Sin verificación RBAC.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {"url": "https://api.inversionesduquin.online", "description": "API i2d_dw — Producción"}
+  ],
+  "paths": {
+    "/api/v2/auth/validate": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Validate Token",
+        "description": "Valida un PAT y retorna información del usuario autenticado junto con sus permisos. Requiere token válido (Authorization: Bearer). Sin verificación RBAC. No consume rate limit de datos.",
+        "operationId": "validate_token",
+        "requestBody": {
+          "description": "Sin body requerido.",
+          "content": {"application/json": {"schema": {"type": "object"}}},
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Token válido — info de usuario, sesión y permisos",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/TokenValidationResponse"}
+              }
+            }
+          },
+          "401": {
+            "description": "Token inválido, revocado o expirado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {"type": "string", "example": "Token inválido o revocado"}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Usuario inactivo, inexistente o sin rol asignado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {"type": "string", "example": "Usuario inactivo o inexistente"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "TokenValidationResponse": {
+        "type": "object",
+        "required": ["user_id", "username", "role", "session", "permissions"],
+        "properties": {
+          "user_id": {"type": "integer", "description": "ID del usuario"},
+          "username": {"type": "string", "description": "Nombre de usuario"},
+          "full_name": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Nombre completo"},
+          "role": {"type": "string", "description": "Rol asignado (\"sin_rol\" si no tiene)"},
+          "session": {"$ref": "#/components/schemas/SessionInfo"},
+          "permissions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Lista de nombres de permisos del rol"
+          }
+        }
+      },
+      "SessionInfo": {
+        "type": "object",
+        "required": ["id", "prefix", "is_active", "created_at"],
+        "properties": {
+          "id": {"type": "integer", "description": "ID de la sesión/PAT"},
+          "prefix": {"type": "string", "description": "Prefijo del token"},
+          "description": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Descripción del token"},
+          "expires_at": {"anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}], "description": "Expiración (ISO 8601)"},
+          "last_used_at": {"anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}], "description": "Último uso (ISO 8601)"},
+          "is_active": {"type": "boolean", "description": "Si el token está activo"},
+          "created_at": {"type": "string", "format": "date-time", "description": "Creación (ISO 8601)"}
+        }
+      }
+    }
+  }
+}
