@@ -1,34 +1,36 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "i2d_dw — Ventas",
-    "description": "Endpoints de ventas del Data Warehouse i2d_dw. Requieren token válido (Authorization: Bearer) y permiso RBAC específico por endpoint.",
-    "version": "2.0.0"
+    "title": "i2d_dw - Ventas",
+    "description": "Endpoints de ventas del Data Warehouse i2d_dw. Multiples modos: resumen, busqueda, ranking, margen, comparativa, ticket, rotacion.",
+    "version": "2.1.0"
   },
-  "servers": [
-    {"url": "https://api.inversionesduquin.online", "description": "API i2d_dw — Producción"}
-  ],
+  "servers": [{"url": "https://api.inversionesduquin.online", "description": "API i2d_dw - Produccion"}],
   "paths": {
     "/api/v2/ventas/": {
       "get": {
         "tags": ["ventas"],
-        "summary": "Ventas diarias agregadas por centro de operación",
-        "description": "Ventas diarias agregadas por centro de operación. Requiere permiso `ventas:read`. Fecha mínima: 2024-01-01.",
+        "summary": "Ventas - multi-modo",
+        "description": "Endpoint multi-modo. Modos: resumen (id_co+fechas), busqueda (q), ranking (top), margen (agrupar_por), comparativa (comparar_con), ticket (modo=ticket), rotacion (modo=rotacion).",
         "operationId": "get_ventas",
         "parameters": [
-          {"name": "id_co", "in": "query", "required": true, "schema": {"type": "integer"}, "description": "ID del centro de operaciones"},
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio (mín. 2024-01-01). Formato YYYY-MM-DD."},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin. Formato YYYY-MM-DD."}
+          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "ID del centro de operaciones"},
+          {"name": "fecha_desde", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio YYYY-MM-DD"},
+          {"name": "fecha_hasta", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin YYYY-MM-DD"},
+          {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Busqueda por nombre, referencia o ID de producto"},
+          {"name": "referencia", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Busqueda por referencia de producto"},
+          {"name": "top", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Ranking: cantidad de productos a retornar"},
+          {"name": "ordenar_por", "in": "query", "required": false, "schema": {"type": "string", "enum": ["cantidad", "costo"]}, "description": "Criterio de orden para ranking"},
+          {"name": "agrupar_por", "in": "query", "required": false, "schema": {"type": "string", "enum": ["producto", "categoria", "seccion", "proveedor"]}, "description": "Agrupar margen por dimension"},
+          {"name": "comparar_con", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio del periodo anterior para comparativa"},
+          {"name": "modo", "in": "query", "required": false, "schema": {"type": "string", "enum": ["ticket", "rotacion"]}, "description": "Modo especial: ticket o rotacion"},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Maximo de resultados. Default: 100"}
         ],
         "responses": {
-          "200": {
-            "description": "Datos de ventas del centro en el rango",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VentasResponse"}}}
-          },
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "429": {"$ref": "#/components/responses/RateLimited"},
-          "500": {"$ref": "#/components/responses/InternalError"}
+          "200": {"description": "Datos de ventas segun el modo"},
+          "400": {"description": "Parametros invalidos", "content": {"application/json": {"schema": {"type": "object", "properties": {"detail": {"type": "string"}}}}}},
+          "401": {"description": "Token invalido"},
+          "403": {"description": "Sin permiso RBAC"}
         }
       }
     },
@@ -36,23 +38,16 @@
       "get": {
         "tags": ["ventas"],
         "summary": "Ventas desglosadas por producto",
-        "description": "Ventas desglosadas por producto, incluyendo datos de cliente y documento. Requiere permiso `ventas:item:read`. Fecha mínima: 2024-01-01.",
         "operationId": "get_ventas_item",
         "parameters": [
-          {"name": "id_co", "in": "query", "required": true, "schema": {"type": "integer"}, "description": "ID del centro de operaciones"},
-          {"name": "id_item", "in": "query", "required": true, "schema": {"type": "integer"}, "description": "ID del producto"},
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio (mín. 2024-01-01). Formato YYYY-MM-DD."},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin. Formato YYYY-MM-DD."}
+          {"name": "id_co", "in": "query", "required": true, "schema": {"type": "integer"}},
+          {"name": "id_item", "in": "query", "required": true, "schema": {"type": "integer"}},
+          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
+          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}}
         ],
         "responses": {
-          "200": {
-            "description": "Ventas del producto por centro en el rango",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VentasItemResponse"}}}
-          },
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "429": {"$ref": "#/components/responses/RateLimited"},
-          "500": {"$ref": "#/components/responses/InternalError"}
+          "200": {"description": "Detalle de ventas del producto"},
+          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
         }
       }
     },
@@ -60,23 +55,16 @@
       "get": {
         "tags": ["ventas"],
         "summary": "Ventas agrupadas por cliente",
-        "description": "Ventas agrupadas por cliente, con filtros opcionales de centro y cliente. Requiere permiso `ventas:clientes`. Fecha mínima: 2024-01-01.",
         "operationId": "get_ventas_clientes",
         "parameters": [
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio (mín. 2024-01-01). Formato YYYY-MM-DD."},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin. Formato YYYY-MM-DD."},
-          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Filtrar por centro de operaciones (opcional)"},
-          {"name": "id_cliente", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Filtrar por cliente específico (opcional)"}
+          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
+          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
+          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "id_cliente", "in": "query", "required": false, "schema": {"type": "integer"}}
         ],
         "responses": {
-          "200": {
-            "description": "Ventas del cliente(s) en el rango de fechas",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VentasClientesResponse"}}}
-          },
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "429": {"$ref": "#/components/responses/RateLimited"},
-          "500": {"$ref": "#/components/responses/InternalError"}
+          "200": {"description": "Ventas por cliente"},
+          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
         }
       }
     },
@@ -84,129 +72,17 @@
       "get": {
         "tags": ["ventas"],
         "summary": "Ventas desglosadas por medio de pago",
-        "description": "Ventas desglosadas por medio de pago. Requiere permiso `ventas:mpagos`. Fecha mínima: 2024-01-01.",
         "operationId": "get_ventas_mpagos",
         "parameters": [
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio (mín. 2024-01-01). Formato YYYY-MM-DD."},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin. Formato YYYY-MM-DD."},
-          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Filtrar por centro de operaciones (opcional)"}
+          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
+          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
+          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}}
         ],
         "responses": {
-          "200": {
-            "description": "Ventas por medio de pago en el rango",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VentasMpagosResponse"}}}
-          },
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "429": {"$ref": "#/components/responses/RateLimited"},
-          "500": {"$ref": "#/components/responses/InternalError"}
+          "200": {"description": "Ventas por medio de pago"},
+          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
         }
       }
-    }
-  },
-  "components": {
-    "schemas": {
-      "VentaRecord": {
-        "type": "object",
-        "properties": {
-          "id_centro_operacion": {"type": "integer", "description": "ID del centro de operaciones"},
-          "fecha": {"type": "string", "description": "Fecha del documento (ISO 8601)"},
-          "neto": {"type": "number", "description": "Valor neto total"},
-          "bruto": {"type": "number", "description": "Valor bruto total"},
-          "subtotal": {"type": "number", "description": "Neto − impuesto"},
-          "impuesto": {"type": "number", "description": "Total impuestos"},
-          "descuento": {"type": "number", "description": "Total descuentos"},
-          "costo_prom_total": {"type": "number", "description": "Costo promedio total"},
-          "margen": {"type": "number", "description": "neto − costo_prom_total (ETL)"},
-          "margen_porcentaje": {"type": "number", "description": "(margen / neto) * 100, 0 si neto=0 (ETL)"}
-        }
-      },
-      "VentasResponse": {
-        "type": "object",
-        "properties": {
-          "status": {"type": "string", "example": "success"},
-          "data": {"type": "array", "items": {"$ref": "#/components/schemas/VentaRecord"}}
-        }
-      },
-      "VentaItemRecord": {
-        "type": "object",
-        "properties": {
-          "id_centro_operacion": {"type": "integer"},
-          "fecha": {"type": "string"},
-          "id_producto": {"type": "integer"},
-          "consecutivo_documento": {"type": "string", "description": "Número de documento"},
-          "cliente": {"type": "string", "description": "Nombre o razón social del cliente"},
-          "id_cliente": {"type": "string", "description": "ID del cliente (tercero)"},
-          "tipo_cliente": {"type": "string", "description": "CREDITO, POS, o CONSUMIDOR FINAL"},
-          "neto": {"type": "number"}, "bruto": {"type": "number"}, "subtotal": {"type": "number"},
-          "impuesto": {"type": "number"}, "descuento": {"type": "number"},
-          "costo_prom_total": {"type": "number"},
-          "margen": {"type": "number"}, "margen_porcentaje": {"type": "number"}
-        }
-      },
-      "VentasItemResponse": {
-        "type": "object",
-        "properties": {
-          "status": {"type": "string", "example": "success"},
-          "data": {"type": "array", "items": {"$ref": "#/components/schemas/VentaItemRecord"}}
-        }
-      },
-      "VentaClienteRecord": {
-        "type": "object",
-        "properties": {
-          "id_centro_operacion": {"type": "integer"},
-          "fecha_doc": {"type": "string", "description": "Fecha del documento"},
-          "consecutivo_documento": {"type": "string"},
-          "cliente": {"type": "string"}, "id_cliente": {"type": "string"},
-          "tipo_cliente": {"type": "string"},
-          "neto": {"type": "number"}, "bruto": {"type": "number"}, "subtotal": {"type": "number"},
-          "impuesto": {"type": "number"}, "descuento": {"type": "number"},
-          "costo_prom_total": {"type": "number"},
-          "margen": {"type": "number"}, "margen_porcentaje": {"type": "number"}
-        }
-      },
-      "VentasClientesResponse": {
-        "type": "object",
-        "properties": {
-          "status": {"type": "string", "example": "success"},
-          "data": {"type": "array", "items": {"$ref": "#/components/schemas/VentaClienteRecord"}}
-        }
-      },
-      "VentaMpagoRecord": {
-        "type": "object",
-        "properties": {
-          "id_centro_operacion": {"type": "integer"},
-          "fecha_doc": {"type": "string"},
-          "medio_pago": {"type": "string", "description": "Ej. EFECTIVO, TARJETA CREDITO"},
-          "id_tipo_documento": {"type": "string", "description": "Código del tipo de documento"},
-          "consecutivo_documento": {"type": "string"},
-          "cliente": {"type": "string"}, "id_cliente": {"type": "string"},
-          "vlr_medio_pago": {"type": "number", "description": "Valor pagado con ese medio"},
-          "neto": {"type": "number"}, "bruto": {"type": "number"}, "subtotal": {"type": "number"},
-          "impuesto": {"type": "number"}, "descuento": {"type": "number"},
-          "costo_prom_total": {"type": "number"},
-          "margen": {"type": "number"}, "margen_porcentaje": {"type": "number"}
-        }
-      },
-      "VentasMpagosResponse": {
-        "type": "object",
-        "properties": {
-          "status": {"type": "string", "example": "success"},
-          "data": {"type": "array", "items": {"$ref": "#/components/schemas/VentaMpagoRecord"}}
-        }
-      },
-      "ErrorDetail": {
-        "type": "object",
-        "properties": {
-          "detail": {"type": "string"}
-        }
-      }
-    },
-    "responses": {
-      "Unauthorized": {"description": "Token inválido, revocado, expirado o ausente", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}},
-      "Forbidden": {"description": "Sin permiso RBAC, usuario inactivo, o sin rol", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}},
-      "RateLimited": {"description": "Rate limit excedido (100 req/min). Retry-After: 60.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}},
-      "InternalError": {"description": "Error interno del servidor", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}}}
     }
   }
 }

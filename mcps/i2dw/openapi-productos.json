@@ -16,8 +16,11 @@
         "description": "Lista paginada de productos. Por defecto 50 productos por página desde la primera. Requiere permiso `productos:read`. Usar has_next/has_previous para navegar.",
         "operationId": "get_productos_paginated",
         "parameters": [
-          {"name": "page", "in": "query", "required": false, "schema": {"type": "integer", "default": 1}, "description": "Número de página (default: 1)"},
-          {"name": "page_size", "in": "query", "required": false, "schema": {"type": "integer", "default": 50}, "description": "Registros por página (default: 50)"}
+          {"name": "page", "in": "query", "required": false, "schema": {"type": "integer", "default": 1}, "description": "Numero de pagina (default: 1)"},
+          {"name": "page_size", "in": "query", "required": false, "schema": {"type": "integer", "default": 50}, "description": "Registros por pagina (default: 50)"},
+          {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Busqueda por texto"},
+          {"name": "buscar_por", "in": "query", "required": false, "schema": {"type": "string", "enum": ["referencia", "nombre"]}, "description": "Donde buscar: referencia o nombre"},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Maximo resultados en modo busqueda"}
         ],
         "responses": {
           "200": {
