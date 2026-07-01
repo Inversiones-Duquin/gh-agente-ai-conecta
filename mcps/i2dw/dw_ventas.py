@@ -41,18 +41,50 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
         return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
                         "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
 
-    # Paso 1: Buscar en catalogo de productos por nombre
+    # Paso 1: Buscar en catalogo con multiples estrategias
+    productos = []
+    estrategias = []
+
+    # Estrategia A: nombre completo (prefix match)
     prod_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "nombre", "limit": 10})
     prod_text = prod_result.get("content", [{}])[0].get("text", "[]")
-
     try:
-        productos = json.loads(prod_text)
-        if isinstance(productos, dict):
-            productos = productos.get("data", productos.get("items", []))
+        data = json.loads(prod_text)
+        prods = data if isinstance(data, list) else data.get("data", data.get("items", []))
+        if prods:
+            productos = prods
+            estrategias.append("nombre completo")
     except (json.JSONDecodeError, TypeError):
-        # Fallback: intentar busqueda directa en ventas
-        return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+        pass
+
+    # Estrategia B: por referencia (el usuario pudo dar una ref)
+    if not productos:
+        ref_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "referencia", "limit": 10})
+        ref_text = ref_result.get("content", [{}])[0].get("text", "[]")
+        try:
+            data = json.loads(ref_text)
+            prods = data if isinstance(data, list) else data.get("data", data.get("items", []))
+            if prods:
+                productos = prods
+                estrategias.append("referencia")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Estrategia C: primeras 3 palabras clave (mas tolerante con prefix)
+    if not productos:
+        palabras = producto.split()[:3]
+        if palabras:
+            short_q = " ".join(palabras)
+            kw_result = call_api("GET", "/productos/", {"q": short_q, "buscar_por": "nombre", "limit": 10})
+            kw_text = kw_result.get("content", [{}])[0].get("text", "[]")
+            try:
+                data = json.loads(kw_text)
+                prods = data if isinstance(data, list) else data.get("data", data.get("items", []))
+                if prods:
+                    productos = prods
+                    estrategias.append(f"palabras clave: '{short_q}'")
+            except (json.JSONDecodeError, TypeError):
+                pass
 
     if not productos:
         return {"status": "success", "content": [{"text": json.dumps({
@@ -98,7 +130,7 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
     return {"status": "success", "content": [{"text": json.dumps({
         "productos_encontrados": len(productos),
         "total_ventas": len(resultados),
-        "metodo": "two-step (catalogo + ventas)",
+        "metodo": f"two-step (catalogo x {', '.join(estrategias)} + ventas)",
         "resultados": resultados
     }, ensure_ascii=False)}]}
 
