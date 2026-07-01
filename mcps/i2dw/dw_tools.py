@@ -6,14 +6,26 @@ from strands import tool
 from i2dw.dw_health import health_check as _health_check, health_db as _health_db
 from i2dw.dw_auth import validate_token as _validate_token
 from i2dw.dw_centros import get_centros_all as _get_centros_all
-from i2dw.dw_ventas import (get_ventas as _get_ventas, get_ventas_item as _get_ventas_item,
-                              get_ventas_clientes as _get_ventas_clientes, get_ventas_mpagos as _get_ventas_mpagos)
+from i2dw.dw_ventas import (
+    get_ventas as _get_ventas, get_ventas_item as _get_ventas_item,
+    get_ventas_clientes as _get_ventas_clientes, get_ventas_mpagos as _get_ventas_mpagos,
+    buscar_ventas as _buscar_ventas, buscar_ventas_por_referencia as _buscar_ventas_por_referencia,
+    top_productos as _top_productos, margen_por_dimension as _margen_por_dimension,
+    comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
+    rotacion_inventario as _rotacion_inventario,
+)
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
                                  get_criterios_producto as _get_criterios_producto)
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    listar_proveedores as _listar_proveedores,
-                                   buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre)
+                                   buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
+                                   reporte_proveedor_consolidado as _reporte_proveedor_consolidado,
+                                   productos_estancados as _productos_estancados,
+                                   reporte_proveedor_top as _reporte_proveedor_top,
+                                   reporte_proveedor_categoria as _reporte_proveedor_categoria,
+                                   reporte_proveedor_rotacion as _reporte_proveedor_rotacion,
+                                   reporte_proveedor_comparar as _reporte_proveedor_comparar)
 
 
 # -- @tool wrappers ----------------------------------------------------------
@@ -91,6 +103,54 @@ def dw_obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin
     return _obtener_reporte_proveedores(fecha_inicio, fecha_fin, proveedor_id)
 
 
+# -- Nuevas herramientas de analisis avanzado --
+
+@tool
+def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
+                      id_co: Optional[int] = None, limite: int = 100) -> dict:
+    """Busca ventas por nombre, referencia o ID de producto. Usar cuando el usuario pregunte por un producto especifico."""
+    return _buscar_ventas(producto, fecha_desde, fecha_hasta, id_co, limite)
+
+@tool
+def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
+                      id_co: Optional[int] = None, ordenar_por: str = "cantidad") -> dict:
+    """Top N productos mas vendidos. Usar para 'productos mas vendidos', 'top ventas', rankings."""
+    return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
+
+@tool
+def dw_margen_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
+                              id_co: Optional[int] = None, limite: int = 50) -> dict:
+    """Margen agrupado por categoria/seccion/producto/proveedor. Usar para 'categoria mas rentable', 'margen por seccion'."""
+    return _margen_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limite)
+
+@tool
+def dw_comparar_periodos(id_co: int, fecha_desde: str, fecha_hasta: str, comparar_con: str) -> dict:
+    """Compara ventas entre dos periodos (ej: este mes vs mes pasado)."""
+    return _comparar_periodos(id_co, fecha_desde, fecha_hasta, comparar_con)
+
+@tool
+def dw_ticket_promedio(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
+    """Ticket promedio diario. Usar para 'cuanto gastan en promedio', 'ticket promedio'."""
+    return _ticket_promedio(fecha_desde, fecha_hasta, id_co)
+
+@tool
+def dw_rotacion_inventario(fecha_desde: str, fecha_hasta: str,
+                            id_co: Optional[int] = None, limite: int = 50) -> dict:
+    """Dias de inventario por producto. Usar para 'productos con sobrestock', 'baja rotacion'."""
+    return _rotacion_inventario(fecha_desde, fecha_hasta, id_co, limite)
+
+@tool
+def dw_productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
+    """Productos con stock que no han vendido. Usar para 'productos estancados', 'no se vende'."""
+    return _productos_estancados(proveedor_id, fecha_corte)
+
+@tool
+def dw_reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
+                               proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
+    """Top productos de un proveedor especifico."""
+    return _reporte_proveedor_top(limite, fecha_inicio, fecha_fin, proveedor_id, ordenar_por)
+
+
 DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
@@ -98,4 +158,7 @@ DW_TOOLS = [
     dw_get_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
     dw_get_productos_paginated, dw_get_productos_all, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
+    dw_buscar_ventas, dw_top_productos, dw_margen_por_dimension,
+    dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
+    dw_productos_estancados, dw_reporte_proveedor_top,
 ]

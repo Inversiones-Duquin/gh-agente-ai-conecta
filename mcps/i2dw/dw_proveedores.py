@@ -11,9 +11,41 @@ _index_ts: float = 0.0
 
 def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: Optional[str] = None,
                                 proveedor_id: Optional[str] = None) -> dict:
-    """Reporte ventas/inventario/costo x proveedor (plan 007). ATENCION: usa mensaje/datos, NO status/data."""
+    """Reporte ventas/inventario/costo x proveedor (plan 007)."""
     return call_api("GET", "/ventas-proveedores/", {"fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
                     "proveedor_id": proveedor_id}, timeout=REQUEST_TIMEOUT_SLOW)
+
+def reporte_proveedor_consolidado(fecha_inicio: Optional[str] = None, fecha_fin: Optional[str] = None,
+                                   proveedor_id: Optional[str] = None) -> dict:
+    """Reporte consolidado sin desglose diario."""
+    return call_api("GET", "/ventas-proveedores/consolidado", {"fecha_inicio": fecha_inicio,
+                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id})
+
+def productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
+    """Productos con stock que no han vendido recientemente."""
+    return call_api("GET", "/ventas-proveedores/venta-cero",
+                    {"fecha_fin": fecha_corte, "proveedor_id": proveedor_id})
+
+def reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
+                           proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
+    """Top productos de un proveedor."""
+    return call_api("GET", "/ventas-proveedores/", {"top": limite, "fecha_inicio": fecha_inicio,
+                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por})
+
+def reporte_proveedor_categoria(fecha_inicio: str, fecha_fin: str, proveedor_id: str) -> dict:
+    """Ventas de proveedor agrupadas por categoria."""
+    return call_api("GET", "/ventas-proveedores/", {"agrupar_por": "categoria",
+                    "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin, "proveedor_id": proveedor_id})
+
+def reporte_proveedor_rotacion(fecha_inicio: str, fecha_fin: str, proveedor_id: str) -> dict:
+    """Rotacion de inventario de un proveedor."""
+    return call_api("GET", "/ventas-proveedores/", {"modo": "rotacion",
+                    "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin, "proveedor_id": proveedor_id})
+
+def reporte_proveedor_comparar(fecha_inicio: str, fecha_fin: str, proveedor_id: str, comparar_con: str) -> dict:
+    """Compara ventas de proveedor entre dos periodos."""
+    return call_api("GET", "/ventas-proveedores/", {"fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
+                    "proveedor_id": proveedor_id, "comparar_con": comparar_con})
 
 
 def listar_proveedores() -> dict:
