@@ -26,9 +26,81 @@ def get_ventas_mpagos(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] =
 
 def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                   id_co: Optional[int] = None, limite: int = 100) -> dict:
-    """Busca ventas por nombre, referencia o ID de producto."""
-    return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+    """Busca ventas con two-step: catalogo primero (LIKE prefix), ventas despues.
+
+    Flujo:
+    1. Si no es un ID numerico puro, busca en /productos?q=&buscar_por=nombre
+    2. Con los IDs encontrados, consulta /ventas?q={id_item}&fecha_desde=&fecha_hasta=
+    3. Si es un ID numerico, busca directo en ventas
+    """
+    import json, logging
+    logger = logging.getLogger("dw-ventas")
+
+    # Si es un ID numerico puro, buscar directo en ventas
+    if producto.strip().isdigit():
+        return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
+                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+
+    # Paso 1: Buscar en catalogo de productos por nombre
+    prod_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "nombre", "limit": 10})
+    prod_text = prod_result.get("content", [{}])[0].get("text", "[]")
+
+    try:
+        productos = json.loads(prod_text)
+        if isinstance(productos, dict):
+            productos = productos.get("data", productos.get("items", []))
+    except (json.JSONDecodeError, TypeError):
+        # Fallback: intentar busqueda directa en ventas
+        return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
+                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+
+    if not productos:
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"No se encontraron productos con '{producto}' en el catalogo.",
+            "resultados": []
+        }, ensure_ascii=False)}]}
+
+    # Paso 2: Para cada producto encontrado, buscar sus ventas
+    # Usamos el primer producto como termino de busqueda en ventas
+    # porque /ventas?q= busca por id, referencia y nombre del producto
+    resultados = []
+    ids_buscados = set()
+
+    for p in productos[:5]:  # max 5 productos para no saturar
+        pid = p.get("id", p.get("id_item", ""))
+        if not pid or pid in ids_buscados:
+            continue
+        ids_buscados.add(pid)
+
+        ventas_result = call_api("GET", "/ventas/", {"q": str(pid), "fecha_desde": fecha_desde,
+                                "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+
+        ventas_text = ventas_result.get("content", [{}])[0].get("text", "[]")
+        try:
+            ventas = json.loads(ventas_text)
+            if isinstance(ventas, dict):
+                ventas = ventas.get("data", ventas.get("datos", []))
+            if isinstance(ventas, list) and ventas:
+                resultados.extend(ventas)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    if not resultados:
+        nombres = ", ".join(str(p.get("descripcion", p.get("id", ""))) for p in productos[:5])
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"Se encontraron productos en catalogo ({nombres}) pero sin ventas en el periodo.",
+            "productos_encontrados": len(productos),
+            "resultados": []
+        }, ensure_ascii=False)}]}
+
+    # Limitar y retornar
+    resultados = resultados[:limite]
+    return {"status": "success", "content": [{"text": json.dumps({
+        "productos_encontrados": len(productos),
+        "total_ventas": len(resultados),
+        "metodo": "two-step (catalogo + ventas)",
+        "resultados": resultados
+    }, ensure_ascii=False)}]}
 
 def buscar_ventas_por_referencia(referencia: str, fecha_desde: str, fecha_hasta: str,
                                   id_co: Optional[int] = None, limite: int = 100) -> dict:
