@@ -87,10 +87,10 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                 pass
 
     if not productos:
-        return {"status": "success", "content": [{"text": json.dumps({
-            "mensaje": f"No se encontraron productos con '{producto}' en el catalogo.",
-            "resultados": []
-        }, ensure_ascii=False)}]}
+        # Fallback final: intentar busqueda directa en ventas (puede ser mas tolerante)
+        logger.info("Catalogo sin resultados para '%s', intentando ventas directo", producto)
+        return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
+                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
 
     # Paso 2: Para cada producto encontrado, buscar sus ventas
     # Usamos el primer producto como termino de busqueda en ventas
