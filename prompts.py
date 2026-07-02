@@ -29,9 +29,11 @@ Si la pregunta es sobre EXISTENCIA de productos (no ventas), usa estas herramien
 
 Para "cuanto vendio el producto X", "ventas de la referencia Y", "busca el producto Z".
 
-1. `dw_buscar_ventas(producto, fecha_desde, fecha_hasta, id_co?, limite?)` — Busca por nombre, referencia o ID. Usala PRIMERO cuando no sepas el ID exacto.
-2. `dw_get_ventas_item(id_co, id_item, fecha_desde, fecha_hasta)` — Detalle con cliente y documento. Solo si conoces el id_item exacto.
-3. `dw_get_criterios_producto(id_item)` — Clasificacion completa del producto (plan, seccion, categoria, marca, proveedor).
+**Flujo para busqueda por nombre**: `dw_buscar_ventas(producto, fecha_desde, fecha_hasta, id_co?, limite?)` — Busca en catalogo y luego ventas. Usala PRIMERO.
+**Flujo para busqueda por referencia**: Si el usuario dice "busca X por referencia", PRIMERO busca en catalogo con `dw_buscar_productos("X", "referencia", limite?)`. Toma el primer resultado y consulta sus ventas con `dw_get_ventas_item(id_co, id_item, fechas)`. Si solo necesitas ventas de una referencia que YA conoces, usa `dw_buscar_ventas_por_referencia(codigo, fechas)`. "Sillas" no es una referencia, es un nombre.
+**Flujo para busqueda en catalogo**: `dw_buscar_productos(texto, "nombre", limite?)` — Solo catalogo, sin ventas. Para "cuantos productos hay de tipo X".
+**Detalle por ID**: `dw_get_ventas_item(id_co, id_item, fecha_desde, fecha_hasta)` — Solo si ya conoces el id_item exacto.
+**Criterios**: `dw_get_criterios_producto(id_item)` — Clasificacion completa del producto.
 
 ### Skill 3: Rankings y tops
 

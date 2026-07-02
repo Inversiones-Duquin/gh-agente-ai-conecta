@@ -112,6 +112,12 @@ def dw_obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin
 # -- Nuevas herramientas de analisis avanzado --
 
 @tool
+def dw_buscar_ventas_por_referencia(referencia: str, fecha_desde: str, fecha_hasta: str,
+                                     id_co: Optional[int] = None, limite: int = 100) -> dict:
+    """Busca ventas por referencia de producto. Usar cuando el usuario pida buscar por referencia."""
+    return _buscar_ventas_por_referencia(referencia, fecha_desde, fecha_hasta, id_co, limite)
+
+@tool
 def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, limite: int = 100) -> dict:
     """Busca ventas por nombre, referencia o ID de producto. Usar cuando el usuario pregunte por un producto especifico."""
@@ -164,7 +170,7 @@ DW_TOOLS = [
     dw_get_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
     dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
-    dw_buscar_ventas, dw_top_productos, dw_margen_por_dimension,
+    dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_margen_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
 ]
