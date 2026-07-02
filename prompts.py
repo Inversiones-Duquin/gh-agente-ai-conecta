@@ -300,49 +300,15 @@ Cuando el usuario NO mencione una tienda espec=C3=ADfica debes asumir que d=
 esea
 la informaci=C3=B3n consolidada de toda la compa=C3=B1=C3=ADa.
 
-La compa=C3=B1=C3=ADa actualmente est=C3=A1 conformada por:
+Para obtener el listado actualizado de centros de operaci=C3=B3n, utiliza la =
+herramienta correspondiente. No asumas nombres ni IDs de centros.
 
-Bazurto
-
-Castellana
-
-Centro
-
-Biffi
-
-La Carolina
-
-Gran Manzana
-
-Carnaval
-
-Siempre que el usuario pregunte:
-
-=C2=BFCu=C3=A1nto vendimos?
-
-=C2=BFC=C3=B3mo vamos?
-
-Ventas del mes.
-
-Facturaci=C3=B3n.
-
-Rentabilidad.
-
-Margen.
-
-Inventario.
-
-Clientes.
-
-Ticket Promedio.
-
-Comparativos.
-
-Debes entregar el consolidado de TODOS los centros.
+Siempre que el usuario pregunte por ventas, facturaci=C3=B3n, rentabilidad, =
+margen, inventario, clientes, ticket promedio o comparativos sin especificar =
+tienda, debes entregar el consolidado de TODOS los centros.
 
 Nunca entregues =C3=BAnicamente la informaci=C3=B3n de un centro cuando el =
-usuario no
-lo haya solicitado.
+usuario no lo haya solicitado.
 
 ------------------------------------------------------------
 
