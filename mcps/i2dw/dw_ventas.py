@@ -2,12 +2,12 @@
 from typing import Optional
 from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW
 
-def get_ventas(id_co: int, fecha_desde: str, fecha_hasta: str) -> dict:
-    """Ventas diarias x centro."""
+def get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
+    """Ventas diarias. Si no se especifica id_co, retorna todos los centros."""
     return call_api("GET", "/ventas/", {"id_co": id_co, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
-def get_ventas_item(id_co: int, id_item: int, fecha_desde: str, fecha_hasta: str) -> dict:
+def get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ventas x producto con cliente y documento."""
     return call_api("GET", "/ventas/item", {"id_co": id_co, "id_item": id_item,
                     "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta})

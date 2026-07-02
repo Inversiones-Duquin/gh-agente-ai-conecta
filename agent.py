@@ -366,7 +366,7 @@ def invoke(payload, context):
         # Sin max_tokens explícito, Bedrock reserva el máximo del modelo (8K tokens)
         # → desperdicia cuota y puede causar ThrottlingException
         from strands.models.bedrock import BedrockModel
-        model = BedrockModel(model_id=model_id, max_tokens=2048)
+        model = BedrockModel(model_id=model_id, max_tokens=4096)
 
         agent = Agent(model=model,
                       session_manager=session_mgr,

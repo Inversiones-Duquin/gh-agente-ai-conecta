@@ -62,12 +62,12 @@ def dw_buscar_proveedor_por_nombre(nombre: str) -> dict:
     return _buscar_proveedor_por_nombre(nombre)
 
 @tool
-def dw_get_ventas(id_co: int, fecha_desde: str, fecha_hasta: str) -> dict:
-    """Ventas diarias x centro. Neto, bruto, subtotal, impuesto, descuento, costo, margen."""
-    return _get_ventas(id_co, fecha_desde, fecha_hasta)
+def dw_get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
+    """Ventas diarias. Si no se especifica id_co, retorna TODOS los centros de operacion. Neto, bruto, subtotal, impuesto, descuento, costo, margen."""
+    return _get_ventas(fecha_desde, fecha_hasta, id_co)
 
 @tool
-def dw_get_ventas_item(id_co: int, id_item: int, fecha_desde: str, fecha_hasta: str) -> dict:
+def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ventas x producto con cliente y documento (CREDITO/POS/CONSUMIDOR FINAL)."""
     return _get_ventas_item(id_co, id_item, fecha_desde, fecha_hasta)
 
