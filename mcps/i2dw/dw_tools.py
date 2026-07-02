@@ -16,7 +16,8 @@ from i2dw.dw_ventas import (
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
-                                 get_criterios_producto as _get_criterios_producto)
+                                 get_criterios_producto as _get_criterios_producto,
+                                 buscar_productos as _buscar_productos)
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    listar_proveedores as _listar_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
@@ -92,6 +93,11 @@ def dw_get_productos_all(id_item: Optional[int] = None) -> dict:
     return _get_productos_all(id_item)
 
 @tool
+def dw_buscar_productos(texto: str, buscar_por: str = "nombre", limite: int = 200) -> dict:
+    """Busca productos en el catalogo por nombre o referencia. Usar para 'cuantos productos de tipo X', 'productos que contengan Y'."""
+    return _buscar_productos(texto, buscar_por, limite)
+
+@tool
 def dw_get_criterios_producto(id_item: int) -> dict:
     """Criterios de clasificacion (planes 001-007): plan, procedencia, seccion, categoria, etc."""
     return _get_criterios_producto(id_item)
@@ -156,7 +162,7 @@ DW_TOOLS = [
     dw_get_centros_all,
     dw_listar_proveedores, dw_buscar_proveedor_por_nombre,
     dw_get_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
-    dw_get_productos_paginated, dw_get_productos_all, dw_get_criterios_producto,
+    dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
     dw_buscar_ventas, dw_top_productos, dw_margen_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,

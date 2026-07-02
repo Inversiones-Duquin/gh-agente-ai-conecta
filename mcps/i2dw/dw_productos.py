@@ -13,3 +13,7 @@ def get_productos_all(id_item: Optional[int] = None) -> dict:
 def get_criterios_producto(id_item: int) -> dict:
     """Criterios plan 001-007 de un producto."""
     return call_api("GET", f"/productos/{id_item}")
+
+def buscar_productos(texto: str, buscar_por: str = "nombre", limite: int = 200) -> dict:
+    """Busca productos por nombre o referencia. Usar para 'cuantos productos de tipo X hay'."""
+    return call_api("GET", "/productos/", {"q": texto, "buscar_por": buscar_por, "limit": limite})
