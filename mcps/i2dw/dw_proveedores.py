@@ -19,7 +19,8 @@ def reporte_proveedor_consolidado(fecha_inicio: Optional[str] = None, fecha_fin:
                                    proveedor_id: Optional[str] = None) -> dict:
     """Reporte consolidado sin desglose diario."""
     return call_api("GET", "/ventas-proveedores/consolidado", {"fecha_inicio": fecha_inicio,
-                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id})
+                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id},
+                    timeout=REQUEST_TIMEOUT_SLOW)
 
 def productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
     """Productos con stock que no han vendido recientemente."""
@@ -30,7 +31,8 @@ def reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
                            proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
     """Top productos de un proveedor."""
     return call_api("GET", "/ventas-proveedores/", {"top": limite, "fecha_inicio": fecha_inicio,
-                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por})
+                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por},
+                    timeout=REQUEST_TIMEOUT_SLOW)
 
 def reporte_proveedor_categoria(fecha_inicio: str, fecha_fin: str, proveedor_id: str) -> dict:
     """Ventas de proveedor agrupadas por categoria."""

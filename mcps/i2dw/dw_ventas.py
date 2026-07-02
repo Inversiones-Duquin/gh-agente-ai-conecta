@@ -46,7 +46,8 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
     estrategias = []
 
     # Estrategia A: nombre completo (prefix match)
-    prod_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "nombre", "limit": 10})
+    prod_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "nombre", "limit": 10},
+                           timeout=REQUEST_TIMEOUT_SLOW)
     prod_text = prod_result.get("content", [{}])[0].get("text", "[]")
     try:
         data = json.loads(prod_text)
@@ -59,7 +60,8 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
 
     # Estrategia B: por referencia (el usuario pudo dar una ref)
     if not productos:
-        ref_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "referencia", "limit": 10})
+        ref_result = call_api("GET", "/productos/", {"q": producto, "buscar_por": "referencia", "limit": 10},
+                            timeout=REQUEST_TIMEOUT_SLOW)
         ref_text = ref_result.get("content", [{}])[0].get("text", "[]")
         try:
             data = json.loads(ref_text)
@@ -75,7 +77,8 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
         palabras = producto.split()[:3]
         if palabras:
             short_q = " ".join(palabras)
-            kw_result = call_api("GET", "/productos/", {"q": short_q, "buscar_por": "nombre", "limit": 10})
+            kw_result = call_api("GET", "/productos/", {"q": short_q, "buscar_por": "nombre", "limit": 10},
+                                timeout=REQUEST_TIMEOUT_SLOW)
             kw_text = kw_result.get("content", [{}])[0].get("text", "[]")
             try:
                 data = json.loads(kw_text)
@@ -90,7 +93,8 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
         # Fallback final: intentar busqueda directa en ventas (puede ser mas tolerante)
         logger.info("Catalogo sin resultados para '%s', intentando ventas directo", producto)
         return call_api("GET", "/ventas/", {"q": producto, "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+                        "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
+                        timeout=REQUEST_TIMEOUT_SLOW)
 
     # Paso 2: Para cada producto encontrado, buscar sus ventas
     # Usamos el primer producto como termino de busqueda en ventas
@@ -105,7 +109,8 @@ def buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
         ids_buscados.add(pid)
 
         ventas_result = call_api("GET", "/ventas/", {"q": str(pid), "fecha_desde": fecha_desde,
-                                "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+                                "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
+                                timeout=REQUEST_TIMEOUT_SLOW)
 
         ventas_text = ventas_result.get("content", [{}])[0].get("text", "[]")
         try:
@@ -138,19 +143,22 @@ def buscar_ventas_por_referencia(referencia: str, fecha_desde: str, fecha_hasta:
                                   id_co: Optional[int] = None, limite: int = 100) -> dict:
     """Busca ventas por referencia exacta/parcial de producto."""
     return call_api("GET", "/ventas/", {"referencia": referencia, "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
+                    timeout=REQUEST_TIMEOUT_SLOW)
 
 def top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
                   id_co: Optional[int] = None, ordenar_por: str = "cantidad") -> dict:
     """Top N productos mas vendidos en un periodo."""
     return call_api("GET", "/ventas/", {"top": limite, "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co, "ordenar_por": ordenar_por})
+                    "fecha_hasta": fecha_hasta, "id_co": id_co, "ordenar_por": ordenar_por},
+                    timeout=REQUEST_TIMEOUT_SLOW)
 
 def margen_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                           id_co: Optional[int] = None, limite: int = 50) -> dict:
     """Margen agrupado por categoria, seccion, producto o proveedor."""
     return call_api("GET", "/ventas/", {"agrupar_por": dimension, "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
+                    timeout=REQUEST_TIMEOUT_SLOW)
 
 def comparar_periodos(id_co: int, fecha_desde: str, fecha_hasta: str, comparar_con: str) -> dict:
     """Compara ventas entre dos periodos."""
@@ -160,10 +168,11 @@ def comparar_periodos(id_co: int, fecha_desde: str, fecha_hasta: str, comparar_c
 def ticket_promedio(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ticket promedio diario."""
     return call_api("GET", "/ventas/", {"modo": "ticket", "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co})
+                    "fecha_hasta": fecha_hasta, "id_co": id_co}, timeout=REQUEST_TIMEOUT_SLOW)
 
 def rotacion_inventario(fecha_desde: str, fecha_hasta: str,
                          id_co: Optional[int] = None, limite: int = 50) -> dict:
     """Dias de inventario por producto."""
     return call_api("GET", "/ventas/", {"modo": "rotacion", "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite})
+                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
+                    timeout=REQUEST_TIMEOUT_SLOW)

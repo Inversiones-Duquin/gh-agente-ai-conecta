@@ -378,8 +378,16 @@ def invoke(payload, context):
 
         result = agent(prompt)
 
-        response_text = result.message.get("content",
-                                           [{}])[0].get("text", str(result))
+        # Usar AgentResult.__str__() que itera TODOS los content blocks buscando texto
+        response_text = str(result).strip()
+
+        if not response_text:
+            logger.warning(
+                "Respuesta vacia — stop_reason=%s, content_blocks=%d, "
+                "prompt_len=%d, session=%s",
+                result.stop_reason,
+                len(result.message.get("content", [])),
+                len(prompt), session_id)
 
         logger.info(
             "OK — sessionId=%s, model=%s, source=%s, prompt_len=%d, response_len=%d",
