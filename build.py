@@ -2,7 +2,7 @@
 import zipfile, os
 
 DIST = "dist"
-BASE_ZIP = "agent-v13.zip"  # zip base (v55) — ultimo 100% funcional en Linux
+BASE_ZIP = "dist/agent-v82.zip"  # zip base — usar último build como base
 SITE = ".venv/Lib/site-packages"
 
 # Archivos raiz actualizados
