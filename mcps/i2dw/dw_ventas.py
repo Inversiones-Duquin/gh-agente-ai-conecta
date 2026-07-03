@@ -19,10 +19,11 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
     import json, logging
     logger = logging.getLogger("dw-ventas")
 
-    # Usar limites altos para asegurar que todos los registros del periodo se incluyan
-    result = call_api("GET", "/ventas/",
-                      {"id_co": id_co, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta},
-                      timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
+    # Usar API agregada por centro: 1 fila por centro, imposible truncar
+    params = {"agrupar_por": "co", "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "limit": 100}
+    if id_co:
+        params["id_co"] = id_co
+    result = call_api("GET", "/ventas/", params, timeout=REQUEST_TIMEOUT_SLOW)
 
     # Extraer datos del formato de respuesta
     raw_text = result.get("content", [{}])[0].get("text", "[]")
@@ -48,48 +49,23 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
             "centros_reportados": 0
         }, ensure_ascii=False)}]}
 
-    # Sumar todas las metricas y desglosar por centro
+    # Sumar totales desde datos agregados por centro (1 fila por centro)
     total_neto = 0
-    total_bruto = 0
     total_costo = 0
     total_margen = 0
     total_descuento = 0
     total_impuesto = 0
-    por_centro = {}  # id_centro -> {neto, margen, margen_pct}
+    centros = set()
 
     for v in ventas:
-        neto = float(v.get("neto", 0) or 0)
-        bruto = float(v.get("bruto", 0) or 0)
-        costo = float(v.get("costo", 0) or v.get("costo_prom_total", 0) or 0)
-        margen = float(v.get("margen", 0) or 0)
-        desc = float(v.get("descuento", 0) or 0)
-        imp = float(v.get("impuesto", 0) or 0)
-
-        total_neto += neto
-        total_bruto += bruto
-        total_costo += costo
-        total_margen += margen
-        total_descuento += desc
-        total_impuesto += imp
-
-        co = str(v.get("id_centro_operacion") or v.get("id_co") or
-                 v.get("centro_operacion") or v.get("punto_de_venta", ""))
+        total_neto += float(v.get("neto", 0) or 0)
+        total_costo += float(v.get("costo", 0) or 0)
+        total_margen += float(v.get("margen", 0) or 0)
+        total_descuento += float(v.get("descuento", 0) or 0)
+        total_impuesto += float(v.get("impuesto", 0) or 0)
+        co = str(v.get("id_grupo") or v.get("grupo") or "")
         if co:
-            if co not in por_centro:
-                por_centro[co] = {"neto": 0, "margen": 0}
-            por_centro[co]["neto"] += neto
-            por_centro[co]["margen"] += margen
-
-    # Calcular margen % por centro
-    for co, vals in por_centro.items():
-        vals["neto"] = round(vals["neto"], 2)
-        vals["margen"] = round(vals["margen"], 2)
-        vals["margen_pct"] = round((vals["margen"] / vals["neto"] * 100), 2) if vals["neto"] > 0 else 0
-
-    # Ordenar centros por neto descendente
-    por_centro_ordenado = dict(
-        sorted(por_centro.items(), key=lambda x: x[1]["neto"], reverse=True)
-    )
+            centros.add(co)
 
     # Calcular margen porcentual
     margen_pct = round((total_margen / total_neto * 100), 2) if total_neto > 0 else 0
@@ -97,14 +73,12 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
     resumen = {
         "periodo": f"{fecha_desde} a {fecha_hasta}",
         "total_neto": round(total_neto, 2),
-        "total_bruto": round(total_bruto, 2),
         "total_costo": round(total_costo, 2),
         "total_margen": round(total_margen, 2),
         "margen_porcentual": margen_pct,
         "total_descuento": round(total_descuento, 2),
         "total_impuesto": round(total_impuesto, 2),
-        "centros_reportados": len(por_centro),
-        "por_centro": por_centro_ordenado,
+        "centros_reportados": len(centros),
     }
 
     logger.info("Resumen de ventas generado: %s", resumen)
@@ -112,20 +86,19 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
 
 
 def _extraer_totales(result: dict) -> dict:
-    """Extrae totales y desglose por centro de un resultado de API o resumen."""
+    """Extrae totales de un resultado ya agregado por centro (agrupar_por=co)."""
     import json as _json
     raw = result.get("content", [{}])[0].get("text", "{}")
     try:
         data = _json.loads(raw)
     except (_json.JSONDecodeError, TypeError):
-        return {"total_neto": 0, "total_bruto": 0, "total_costo": 0, "total_margen": 0,
-                "total_descuento": 0, "total_impuesto": 0, "centros": 0, "por_centro": {}}
+        return {"total_neto": 0, "total_margen": 0, "centros": 0, "por_centro": {}}
 
     # Si ya es un resumen (viene de resumen_ventas), devolverlo directo
     if "total_neto" in data:
         return data
 
-    # Si es datos crudos, sumarlos con desglose por centro
+    # Datos agregados por centro desde agrupar_por=co
     if isinstance(data, dict):
         items = data.get("datos", data.get("data", data.get("items", [])))
     elif isinstance(data, list):
@@ -133,34 +106,20 @@ def _extraer_totales(result: dict) -> dict:
     else:
         items = []
 
-    neto = bruto = costo = margen = desc = imp = 0.0
+    neto_total = margen_total = 0.0
     por_centro = {}
     for v in items:
         n = float(v.get("neto", 0) or 0)
         m = float(v.get("margen", 0) or 0)
-        neto += n; bruto += float(v.get("bruto", 0) or 0)
-        costo += float(v.get("costo", 0) or v.get("costo_prom_total", 0) or 0)
-        margen += m; desc += float(v.get("descuento", 0) or 0)
-        imp += float(v.get("impuesto", 0) or 0)
-        co = str(v.get("id_centro_operacion") or v.get("id_co") or
-                 v.get("centro_operacion") or v.get("punto_de_venta", ""))
+        neto_total += n
+        margen_total += m
+        co = str(v.get("id_grupo") or v.get("grupo") or v.get("id_centro_operacion") or "")
         if co:
-            if co not in por_centro:
-                por_centro[co] = {"neto": 0, "margen": 0}
-            por_centro[co]["neto"] += n
-            por_centro[co]["margen"] += m
+            por_centro[co] = {"neto": round(n, 2), "margen": round(m, 2),
+                               "margen_pct": round(v.get("margen_porcentaje", 0) or 0, 2)}
 
-    for co, vals in por_centro.items():
-        vals["neto"] = round(vals["neto"], 2)
-        vals["margen"] = round(vals["margen"], 2)
-        vals["margen_pct"] = round((vals["margen"] / vals["neto"] * 100), 2) if vals["neto"] > 0 else 0
-
-    por_centro_ord = dict(sorted(por_centro.items(), key=lambda x: x[1]["neto"], reverse=True))
-
-    return {"total_neto": round(neto, 2), "total_bruto": round(bruto, 2),
-            "total_costo": round(costo, 2), "total_margen": round(margen, 2),
-            "total_descuento": round(desc, 2), "total_impuesto": round(imp, 2),
-            "centros": len(por_centro), "por_centro": por_centro_ord}
+    return {"total_neto": round(neto_total, 2), "total_margen": round(margen_total, 2),
+            "centros": len(por_centro), "por_centro": por_centro}
 
 
 def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
@@ -181,13 +140,14 @@ def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
     import json as _json, logging as _logging
     _logger = _logging.getLogger("dw-ventas")
 
-    # Consultar ambos periodos
-    r1 = call_api("GET", "/ventas/",
-                  {"id_co": id_co, "fecha_desde": fecha_desde_1, "fecha_hasta": fecha_hasta_1},
-                  timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
-    r2 = call_api("GET", "/ventas/",
-                  {"id_co": id_co, "fecha_desde": fecha_desde_2, "fecha_hasta": fecha_hasta_2},
-                  timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
+    # Usar API agregada por centro — devuelve una fila por centro, no datos diarios crudos
+    params1 = {"agrupar_por": "co", "fecha_desde": fecha_desde_1, "fecha_hasta": fecha_hasta_1, "limit": 100}
+    params2 = {"agrupar_por": "co", "fecha_desde": fecha_desde_2, "fecha_hasta": fecha_hasta_2, "limit": 100}
+    if id_co:
+        params1["id_co"] = id_co
+        params2["id_co"] = id_co
+    r1 = call_api("GET", "/ventas/", params1, timeout=REQUEST_TIMEOUT_SLOW)
+    r2 = call_api("GET", "/ventas/", params2, timeout=REQUEST_TIMEOUT_SLOW)
 
     t1 = _extraer_totales(r1)
     t2 = _extraer_totales(r2)
@@ -436,3 +396,13 @@ def categoria_top(fecha_desde: str, fecha_hasta: str,
     return call_api("GET", "/ventas/", {"agrupar_por": "categoria", "fecha_desde": fecha_desde,
                     "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": 1,
                     "ordenar_por": ordenar_por}, timeout=REQUEST_TIMEOUT_SLOW)
+
+
+def centros_por_venta(fecha_desde: str, fecha_hasta: str,
+                       orden: str = "desc", limite: int = 5) -> dict:
+    """Sedes ordenadas por venta neta. El API agrupa, suma y ordena — retorna solo N filas.
+    Usa /ventas?agrupar_por=co&orden=asc|desc&limit=N.
+    orden='asc' = las que menos venden primero. orden='desc' = las que mas venden primero."""
+    return call_api("GET", "/ventas/", {"agrupar_por": "co", "fecha_desde": fecha_desde,
+                    "fecha_hasta": fecha_hasta, "orden": orden, "limit": limite},
+                    timeout=REQUEST_TIMEOUT_SLOW)
