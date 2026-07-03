@@ -48,25 +48,48 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
             "centros_reportados": 0
         }, ensure_ascii=False)}]}
 
-    # Sumar todas las metricas
+    # Sumar todas las metricas y desglosar por centro
     total_neto = 0
     total_bruto = 0
     total_costo = 0
     total_margen = 0
     total_descuento = 0
     total_impuesto = 0
-    centros = set()
+    por_centro = {}  # id_centro -> {neto, margen, margen_pct}
 
     for v in ventas:
-        total_neto += float(v.get("neto", 0) or 0)
-        total_bruto += float(v.get("bruto", 0) or 0)
-        total_costo += float(v.get("costo", 0) or 0)
-        total_margen += float(v.get("margen", 0) or 0)
-        total_descuento += float(v.get("descuento", 0) or 0)
-        total_impuesto += float(v.get("impuesto", 0) or 0)
-        co = v.get("centro_operacion") or v.get("id_co") or v.get("punto_de_venta", "")
+        neto = float(v.get("neto", 0) or 0)
+        bruto = float(v.get("bruto", 0) or 0)
+        costo = float(v.get("costo", 0) or v.get("costo_prom_total", 0) or 0)
+        margen = float(v.get("margen", 0) or 0)
+        desc = float(v.get("descuento", 0) or 0)
+        imp = float(v.get("impuesto", 0) or 0)
+
+        total_neto += neto
+        total_bruto += bruto
+        total_costo += costo
+        total_margen += margen
+        total_descuento += desc
+        total_impuesto += imp
+
+        co = str(v.get("id_centro_operacion") or v.get("id_co") or
+                 v.get("centro_operacion") or v.get("punto_de_venta", ""))
         if co:
-            centros.add(str(co))
+            if co not in por_centro:
+                por_centro[co] = {"neto": 0, "margen": 0}
+            por_centro[co]["neto"] += neto
+            por_centro[co]["margen"] += margen
+
+    # Calcular margen % por centro
+    for co, vals in por_centro.items():
+        vals["neto"] = round(vals["neto"], 2)
+        vals["margen"] = round(vals["margen"], 2)
+        vals["margen_pct"] = round((vals["margen"] / vals["neto"] * 100), 2) if vals["neto"] > 0 else 0
+
+    # Ordenar centros por neto descendente
+    por_centro_ordenado = dict(
+        sorted(por_centro.items(), key=lambda x: x[1]["neto"], reverse=True)
+    )
 
     # Calcular margen porcentual
     margen_pct = round((total_margen / total_neto * 100), 2) if total_neto > 0 else 0
@@ -80,7 +103,8 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
         "margen_porcentual": margen_pct,
         "total_descuento": round(total_descuento, 2),
         "total_impuesto": round(total_impuesto, 2),
-        "centros_reportados": len(centros),
+        "centros_reportados": len(por_centro),
+        "por_centro": por_centro_ordenado,
     }
 
     logger.info("Resumen de ventas generado: %s", resumen)
@@ -88,20 +112,20 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
 
 
 def _extraer_totales(result: dict) -> dict:
-    """Extrae totales de un resultado de resumen o get_ventas, haciendo la suma si es necesario."""
+    """Extrae totales y desglose por centro de un resultado de API o resumen."""
     import json as _json
     raw = result.get("content", [{}])[0].get("text", "{}")
     try:
         data = _json.loads(raw)
     except (_json.JSONDecodeError, TypeError):
         return {"total_neto": 0, "total_bruto": 0, "total_costo": 0, "total_margen": 0,
-                "total_descuento": 0, "total_impuesto": 0, "centros": 0}
+                "total_descuento": 0, "total_impuesto": 0, "centros": 0, "por_centro": {}}
 
     # Si ya es un resumen (viene de resumen_ventas), devolverlo directo
     if "total_neto" in data:
         return data
 
-    # Si es datos crudos, sumarlos
+    # Si es datos crudos, sumarlos con desglose por centro
     if isinstance(data, dict):
         items = data.get("datos", data.get("data", data.get("items", [])))
     elif isinstance(data, list):
@@ -110,22 +134,33 @@ def _extraer_totales(result: dict) -> dict:
         items = []
 
     neto = bruto = costo = margen = desc = imp = 0.0
-    centros = set()
+    por_centro = {}
     for v in items:
-        neto += float(v.get("neto", 0) or 0)
-        bruto += float(v.get("bruto", 0) or 0)
-        costo += float(v.get("costo", 0) or 0)
-        margen += float(v.get("margen", 0) or 0)
-        desc += float(v.get("descuento", 0) or 0)
+        n = float(v.get("neto", 0) or 0)
+        m = float(v.get("margen", 0) or 0)
+        neto += n; bruto += float(v.get("bruto", 0) or 0)
+        costo += float(v.get("costo", 0) or v.get("costo_prom_total", 0) or 0)
+        margen += m; desc += float(v.get("descuento", 0) or 0)
         imp += float(v.get("impuesto", 0) or 0)
-        co = v.get("centro_operacion") or v.get("id_co") or v.get("punto_de_venta", "")
+        co = str(v.get("id_centro_operacion") or v.get("id_co") or
+                 v.get("centro_operacion") or v.get("punto_de_venta", ""))
         if co:
-            centros.add(str(co))
+            if co not in por_centro:
+                por_centro[co] = {"neto": 0, "margen": 0}
+            por_centro[co]["neto"] += n
+            por_centro[co]["margen"] += m
+
+    for co, vals in por_centro.items():
+        vals["neto"] = round(vals["neto"], 2)
+        vals["margen"] = round(vals["margen"], 2)
+        vals["margen_pct"] = round((vals["margen"] / vals["neto"] * 100), 2) if vals["neto"] > 0 else 0
+
+    por_centro_ord = dict(sorted(por_centro.items(), key=lambda x: x[1]["neto"], reverse=True))
 
     return {"total_neto": round(neto, 2), "total_bruto": round(bruto, 2),
             "total_costo": round(costo, 2), "total_margen": round(margen, 2),
             "total_descuento": round(desc, 2), "total_impuesto": round(imp, 2),
-            "centros": len(centros)}
+            "centros": len(por_centro), "por_centro": por_centro_ord}
 
 
 def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
@@ -162,6 +197,26 @@ def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
             return round(((actual - anterior) / abs(anterior)) * 100, 2)
         return None
 
+    # Comparar centro por centro
+    por_centro_comp = []
+    todos_centros = set(t1.get("por_centro", {}).keys()) | set(t2.get("por_centro", {}).keys())
+    for co in sorted(todos_centros):
+        c1 = t1.get("por_centro", {}).get(co, {"neto": 0, "margen": 0, "margen_pct": 0})
+        c2 = t2.get("por_centro", {}).get(co, {"neto": 0, "margen": 0, "margen_pct": 0})
+        por_centro_comp.append({
+            "id_centro": co,
+            "neto_actual": c1["neto"], "neto_anterior": c2["neto"],
+            "diferencia_neta": round(c1["neto"] - c2["neto"], 2),
+            "crecimiento_pct": _pct(c1["neto"], c2["neto"]),
+            "margen_actual": c1["margen"], "margen_anterior": c2["margen"],
+            "margen_pct_actual": c1["margen_pct"], "margen_pct_anterior": c2["margen_pct"],
+        })
+
+    # Ordenar: el que mas crecio primero
+    por_centro_comp.sort(key=lambda x: x["crecimiento_pct"] if x["crecimiento_pct"] is not None else -999, reverse=True)
+    mejor = por_centro_comp[0] if por_centro_comp else None
+    peor = por_centro_comp[-1] if por_centro_comp else None
+
     comparacion = {
         "periodo_actual": f"{fecha_desde_1} a {fecha_hasta_1}",
         "periodo_anterior": f"{fecha_desde_2} a {fecha_hasta_2}",
@@ -173,13 +228,17 @@ def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
         "margen_anterior": t2["total_margen"],
         "diferencia_margen": round(t1["total_margen"] - t2["total_margen"], 2),
         "crecimiento_margen_pct": _pct(t1["total_margen"], t2["total_margen"]),
-        "ticket_promedio_actual": round(t1["total_neto"] / t1["centros"], 2) if t1["centros"] > 0 else 0,
-        "ticket_promedio_anterior": round(t2["total_neto"] / t2["centros"], 2) if t2["centros"] > 0 else 0,
-        "centros_reportados": t1["centros"],
+        "ticket_promedio_actual": round(t1["total_neto"] / t1["centros"], 2) if t1.get("centros", 0) > 0 else 0,
+        "ticket_promedio_anterior": round(t2["total_neto"] / t2["centros"], 2) if t2.get("centros", 0) > 0 else 0,
+        "centros_reportados": t1.get("centros", 0),
+        "mejor_centro": mejor,
+        "peor_centro": peor,
+        "comparacion_por_centro": por_centro_comp,
     }
 
-    _logger.info("Comparacion generada: actual=%s, anterior=%s, crecimiento=%s%%",
-                 t1["total_neto"], t2["total_neto"], comparacion["crecimiento_neta_pct"])
+    _logger.info("Comparacion generada: actual=%s, anterior=%s, crecimiento=%s%%, mejor=%s, peor=%s",
+                 t1["total_neto"], t2["total_neto"], comparacion["crecimiento_neta_pct"],
+                 mejor["id_centro"] if mejor else "-", peor["id_centro"] if peor else "-")
     return {"status": "success", "content": [{"text": _json.dumps(comparacion, ensure_ascii=False)}]}
 
 def get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
