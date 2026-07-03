@@ -12,7 +12,7 @@ from i2dw.dw_ventas import (
     buscar_ventas as _buscar_ventas, buscar_ventas_por_referencia as _buscar_ventas_por_referencia,
     top_productos as _top_productos, margen_por_dimension as _margen_por_dimension,
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
-    rotacion_inventario as _rotacion_inventario,
+    rotacion_inventario as _rotacion_inventario, resumen_ventas as _resumen_ventas,
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
@@ -65,6 +65,15 @@ def dw_buscar_proveedor_por_nombre(nombre: str) -> dict:
 def dw_get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ventas diarias. Si no se especifica id_co, retorna TODOS los centros de operacion. Neto, bruto, subtotal, impuesto, descuento, costo, margen."""
     return _get_ventas(fecha_desde, fecha_hasta, id_co)
+
+
+@tool
+def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
+    """Resumen ejecutivo de ventas con totales sumados. Responde 'Cuanto vendimos hoy/ayer/este mes'.
+    Retorna total_neto, total_bruto, total_costo, total_margen, margen_porcentual, total_descuento,
+    total_impuesto y centros_reportados. Usa esta herramienta cuando el usuario pregunte por el total
+    de ventas sin pedir desglose por centro o producto."""
+    return _resumen_ventas(fecha_desde, fecha_hasta, id_co)
 
 @tool
 def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
@@ -167,7 +176,7 @@ DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
     dw_listar_proveedores, dw_buscar_proveedor_por_nombre,
-    dw_get_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
+    dw_get_ventas, dw_resumen_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
     dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
     dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_margen_por_dimension,

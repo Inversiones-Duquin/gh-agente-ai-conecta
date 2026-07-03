@@ -7,6 +7,85 @@ def get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) 
     return call_api("GET", "/ventas/", {"id_co": id_co, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
+
+def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
+    """Resumen de ventas con totales sumados listo para responder al usuario.
+
+    Consulta la API del DW, recibe todos los datos, suma las metricas clave
+    y entrega un resumen ejecutivo con totales netos, bruto, costo, margen,
+    descuento e impuesto. Ideal para preguntas como 'Cuanto vendimos ayer?'
+    o 'Cuanto vendimos hoy?'.
+    """
+    import json, logging
+    logger = logging.getLogger("dw-ventas")
+
+    # Usar limites altos para asegurar que todos los registros del periodo se incluyan
+    result = call_api("GET", "/ventas/",
+                      {"id_co": id_co, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta},
+                      timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
+
+    # Extraer datos del formato de respuesta
+    raw_text = result.get("content", [{}])[0].get("text", "[]")
+    try:
+        data = json.loads(raw_text)
+    except (json.JSONDecodeError, TypeError):
+        return {"status": "error", "content": [{"text": "No se pudieron procesar los datos de ventas."}]}
+
+    # La API puede devolver lista directa o dict con clave de datos
+    if isinstance(data, dict):
+        ventas = data.get("datos", data.get("data", data.get("items", [])))
+    elif isinstance(data, list):
+        ventas = data
+    else:
+        ventas = []
+
+    if not ventas:
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": "No se encontraron ventas para el periodo consultado.",
+            "periodo": f"{fecha_desde} a {fecha_hasta}",
+            "total_neto": 0, "total_bruto": 0, "total_costo": 0,
+            "total_margen": 0, "total_descuento": 0, "total_impuesto": 0,
+            "centros_reportados": 0
+        }, ensure_ascii=False)}]}
+
+    # Sumar todas las metricas
+    total_neto = 0
+    total_bruto = 0
+    total_costo = 0
+    total_margen = 0
+    total_descuento = 0
+    total_impuesto = 0
+    centros = set()
+
+    for v in ventas:
+        total_neto += float(v.get("neto", 0) or 0)
+        total_bruto += float(v.get("bruto", 0) or 0)
+        total_costo += float(v.get("costo", 0) or 0)
+        total_margen += float(v.get("margen", 0) or 0)
+        total_descuento += float(v.get("descuento", 0) or 0)
+        total_impuesto += float(v.get("impuesto", 0) or 0)
+        co = v.get("centro_operacion") or v.get("id_co") or v.get("punto_de_venta", "")
+        if co:
+            centros.add(str(co))
+
+    # Calcular margen porcentual
+    margen_pct = round((total_margen / total_neto * 100), 2) if total_neto > 0 else 0
+
+    resumen = {
+        "periodo": f"{fecha_desde} a {fecha_hasta}",
+        "total_neto": round(total_neto, 2),
+        "total_bruto": round(total_bruto, 2),
+        "total_costo": round(total_costo, 2),
+        "total_margen": round(total_margen, 2),
+        "margen_porcentual": margen_pct,
+        "total_descuento": round(total_descuento, 2),
+        "total_impuesto": round(total_impuesto, 2),
+        "centros_reportados": len(centros),
+    }
+
+    logger.info("Resumen de ventas generado: %s", resumen)
+    return {"status": "success", "content": [{"text": json.dumps(resumen, ensure_ascii=False)}]}
+
 def get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ventas x producto con cliente y documento."""
     return call_api("GET", "/ventas/item", {"id_co": id_co, "id_item": id_item,
