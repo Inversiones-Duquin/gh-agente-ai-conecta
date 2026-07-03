@@ -86,6 +86,102 @@ def resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = No
     logger.info("Resumen de ventas generado: %s", resumen)
     return {"status": "success", "content": [{"text": json.dumps(resumen, ensure_ascii=False)}]}
 
+
+def _extraer_totales(result: dict) -> dict:
+    """Extrae totales de un resultado de resumen o get_ventas, haciendo la suma si es necesario."""
+    import json as _json
+    raw = result.get("content", [{}])[0].get("text", "{}")
+    try:
+        data = _json.loads(raw)
+    except (_json.JSONDecodeError, TypeError):
+        return {"total_neto": 0, "total_bruto": 0, "total_costo": 0, "total_margen": 0,
+                "total_descuento": 0, "total_impuesto": 0, "centros": 0}
+
+    # Si ya es un resumen (viene de resumen_ventas), devolverlo directo
+    if "total_neto" in data:
+        return data
+
+    # Si es datos crudos, sumarlos
+    if isinstance(data, dict):
+        items = data.get("datos", data.get("data", data.get("items", [])))
+    elif isinstance(data, list):
+        items = data
+    else:
+        items = []
+
+    neto = bruto = costo = margen = desc = imp = 0.0
+    centros = set()
+    for v in items:
+        neto += float(v.get("neto", 0) or 0)
+        bruto += float(v.get("bruto", 0) or 0)
+        costo += float(v.get("costo", 0) or 0)
+        margen += float(v.get("margen", 0) or 0)
+        desc += float(v.get("descuento", 0) or 0)
+        imp += float(v.get("impuesto", 0) or 0)
+        co = v.get("centro_operacion") or v.get("id_co") or v.get("punto_de_venta", "")
+        if co:
+            centros.add(str(co))
+
+    return {"total_neto": round(neto, 2), "total_bruto": round(bruto, 2),
+            "total_costo": round(costo, 2), "total_margen": round(margen, 2),
+            "total_descuento": round(desc, 2), "total_impuesto": round(imp, 2),
+            "centros": len(centros)}
+
+
+def comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
+                    fecha_desde_2: str, fecha_hasta_2: str,
+                    id_co: Optional[int] = None) -> dict:
+    """Compara dos periodos de ventas: suma, calcula diferencias y porcentajes de crecimiento.
+
+    Args:
+        fecha_desde_1, fecha_hasta_1: Periodo actual (ej: este mes).
+        fecha_desde_2, fecha_hasta_2: Periodo anterior a comparar (ej: mes pasado).
+        id_co: Opcional, centro de operacion especifico.
+
+    Retorna comparacion lista para responder: totales de cada periodo, diferencia absoluta
+    y porcentaje de crecimiento para neto, margen, ticket promedio, y centros reportados.
+    Usar para: 'comparame este mes contra el anterior', 'como vamos vs año pasado',
+    'crecimos?', 'que porcentaje crecimos?', 'como estuvo junio contra mayo?'.
+    """
+    import json as _json, logging as _logging
+    _logger = _logging.getLogger("dw-ventas")
+
+    # Consultar ambos periodos
+    r1 = call_api("GET", "/ventas/",
+                  {"id_co": id_co, "fecha_desde": fecha_desde_1, "fecha_hasta": fecha_hasta_1},
+                  timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
+    r2 = call_api("GET", "/ventas/",
+                  {"id_co": id_co, "fecha_desde": fecha_desde_2, "fecha_hasta": fecha_hasta_2},
+                  timeout=REQUEST_TIMEOUT_SLOW, max_items=5000, max_chars=500000)
+
+    t1 = _extraer_totales(r1)
+    t2 = _extraer_totales(r2)
+
+    def _pct(actual, anterior):
+        if anterior and anterior != 0:
+            return round(((actual - anterior) / abs(anterior)) * 100, 2)
+        return None
+
+    comparacion = {
+        "periodo_actual": f"{fecha_desde_1} a {fecha_hasta_1}",
+        "periodo_anterior": f"{fecha_desde_2} a {fecha_hasta_2}",
+        "venta_neta_actual": t1["total_neto"],
+        "venta_neta_anterior": t2["total_neto"],
+        "diferencia_neta": round(t1["total_neto"] - t2["total_neto"], 2),
+        "crecimiento_neta_pct": _pct(t1["total_neto"], t2["total_neto"]),
+        "margen_actual": t1["total_margen"],
+        "margen_anterior": t2["total_margen"],
+        "diferencia_margen": round(t1["total_margen"] - t2["total_margen"], 2),
+        "crecimiento_margen_pct": _pct(t1["total_margen"], t2["total_margen"]),
+        "ticket_promedio_actual": round(t1["total_neto"] / t1["centros"], 2) if t1["centros"] > 0 else 0,
+        "ticket_promedio_anterior": round(t2["total_neto"] / t2["centros"], 2) if t2["centros"] > 0 else 0,
+        "centros_reportados": t1["centros"],
+    }
+
+    _logger.info("Comparacion generada: actual=%s, anterior=%s, crecimiento=%s%%",
+                 t1["total_neto"], t2["total_neto"], comparacion["crecimiento_neta_pct"])
+    return {"status": "success", "content": [{"text": _json.dumps(comparacion, ensure_ascii=False)}]}
+
 def get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Ventas x producto con cliente y documento."""
     return call_api("GET", "/ventas/item", {"id_co": id_co, "id_item": id_item,

@@ -13,6 +13,7 @@ from i2dw.dw_ventas import (
     top_productos as _top_productos, margen_por_dimension as _margen_por_dimension,
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
     rotacion_inventario as _rotacion_inventario, resumen_ventas as _resumen_ventas,
+    comparar_ventas as _comparar_ventas,
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
@@ -21,12 +22,8 @@ from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginat
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    listar_proveedores as _listar_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
-                                   reporte_proveedor_consolidado as _reporte_proveedor_consolidado,
                                    productos_estancados as _productos_estancados,
-                                   reporte_proveedor_top as _reporte_proveedor_top,
-                                   reporte_proveedor_categoria as _reporte_proveedor_categoria,
-                                   reporte_proveedor_rotacion as _reporte_proveedor_rotacion,
-                                   reporte_proveedor_comparar as _reporte_proveedor_comparar)
+                                   reporte_proveedor_top as _reporte_proveedor_top)
 
 
 # -- @tool wrappers ----------------------------------------------------------
@@ -74,6 +71,23 @@ def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] =
     total_impuesto y centros_reportados. Usa esta herramienta cuando el usuario pregunte por el total
     de ventas sin pedir desglose por centro o producto."""
     return _resumen_ventas(fecha_desde, fecha_hasta, id_co)
+
+
+@tool
+def dw_comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
+                        fecha_desde_2: str, fecha_hasta_2: str,
+                        id_co: Optional[int] = None) -> dict:
+    """Compara dos periodos de ventas con diferencias y % de crecimiento.
+    Args:
+        fecha_desde_1, fecha_hasta_1: Periodo actual (ej: este mes).
+        fecha_desde_2, fecha_hasta_2: Periodo anterior (ej: mes pasado).
+        id_co: Opcional, centro especifico.
+    Retorna: venta_neta_actual, venta_neta_anterior, diferencia_neta, crecimiento_neta_pct,
+    margen_actual, margen_anterior, diferencia_margen, crecimiento_margen_pct,
+    ticket_promedio_actual, ticket_promedio_anterior, centros_reportados.
+    Usar para: 'comparame este mes vs el anterior', 'como vamos vs año pasado?',
+    'crecimos?', 'que % crecimos?', 'como estuvo junio vs mayo?'."""
+    return _comparar_ventas(fecha_desde_1, fecha_hasta_1, fecha_desde_2, fecha_hasta_2, id_co)
 
 @tool
 def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
@@ -176,7 +190,8 @@ DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
     dw_listar_proveedores, dw_buscar_proveedor_por_nombre,
-    dw_get_ventas, dw_resumen_ventas, dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
+    dw_get_ventas, dw_resumen_ventas, dw_comparar_ventas,
+    dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
     dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
     dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_margen_por_dimension,
