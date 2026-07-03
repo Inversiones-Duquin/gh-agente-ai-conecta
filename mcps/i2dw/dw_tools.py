@@ -14,6 +14,8 @@ from i2dw.dw_ventas import (
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
     rotacion_inventario as _rotacion_inventario, resumen_ventas as _resumen_ventas,
     comparar_ventas as _comparar_ventas,
+    producto_mas_vendido as _producto_mas_vendido,
+    categoria_top as _categoria_top,
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
@@ -186,6 +188,27 @@ def dw_reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
     return _reporte_proveedor_top(limite, fecha_inicio, fecha_fin, proveedor_id, ordenar_por)
 
 
+@tool
+def dw_producto_mas_vendido(fecha_desde: str, fecha_hasta: str,
+                              id_co: Optional[int] = None,
+                              proveedor_id: Optional[str] = None) -> dict:
+    """Producto con mayor venta neta en un periodo. Resultado directo, 1 sola llamada.
+    Usar para: 'producto mas vendido del mes', 'que producto facturo mas?',
+    'producto estrella de junio', 'lo mas vendido del proveedor X'."""
+    return _producto_mas_vendido(fecha_desde, fecha_hasta, id_co, proveedor_id)
+
+
+@tool
+def dw_categoria_top(fecha_desde: str, fecha_hasta: str,
+                      id_co: Optional[int] = None,
+                      ordenar_por: str = "margen") -> dict:
+    """Categoria mas rentable o con mayor venta. Resultado directo, 1 sola llamada.
+    ordenar_por: 'margen' para la mas rentable, 'venta_neta' para la de mayor volumen.
+    Usar para: 'categoria mas rentable', 'categoria con mas ventas',
+    'que categoria dejo mas margen este mes?'."""
+    return _categoria_top(fecha_desde, fecha_hasta, id_co, ordenar_por)
+
+
 DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
@@ -197,4 +220,5 @@ DW_TOOLS = [
     dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_margen_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
+    dw_producto_mas_vendido, dw_categoria_top,
 ]

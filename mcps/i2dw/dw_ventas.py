@@ -410,3 +410,29 @@ def rotacion_inventario(fecha_desde: str, fecha_hasta: str,
     return call_api("GET", "/ventas/", {"modo": "rotacion", "fecha_desde": fecha_desde,
                     "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
                     timeout=REQUEST_TIMEOUT_SLOW)
+
+
+# -- Endpoints optimizados: 1 llamada, resultado directo, sin calculos --
+
+def producto_mas_vendido(fecha_desde: str, fecha_hasta: str,
+                          id_co: Optional[int] = None,
+                          proveedor_id: Optional[str] = None) -> dict:
+    """Producto con mayor venta neta en un periodo. Una sola llamada, resultado directo.
+    Usa /ventas/productos?limit=1 que ordena por venta_neta DESC.
+    Opcional: filtrar por id_co o proveedor_id."""
+    params = {"fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "limit": 1}
+    if id_co:
+        params["id_co"] = id_co
+    if proveedor_id:
+        params["proveedor_id"] = proveedor_id
+    return call_api("GET", "/ventas/productos", params, timeout=REQUEST_TIMEOUT_SLOW)
+
+
+def categoria_top(fecha_desde: str, fecha_hasta: str,
+                   id_co: Optional[int] = None, ordenar_por: str = "margen") -> dict:
+    """Categoria top por margen o venta neta. Una sola llamada, resultado directo.
+    Usa /ventas?agrupar_por=categoria&limit=1.
+    ordenar_por: 'margen' (default, mas rentable) o 'venta_neta' (mas volumen)."""
+    return call_api("GET", "/ventas/", {"agrupar_por": "categoria", "fecha_desde": fecha_desde,
+                    "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": 1,
+                    "ordenar_por": ordenar_por}, timeout=REQUEST_TIMEOUT_SLOW)
