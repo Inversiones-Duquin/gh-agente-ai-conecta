@@ -142,13 +142,22 @@ def dw_obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin
 @tool
 def dw_buscar_ventas_por_referencia(referencia: str, fecha_desde: str, fecha_hasta: str,
                                      id_co: Optional[int] = None, limite: int = 100) -> dict:
-    """Busca ventas por referencia de producto. Usar cuando el usuario pida buscar por referencia."""
+    """[BUSCAR VENTAS POR CODIGO DE REFERENCIA - TWO-STEP OBLIGATORIO]
+    PASO 1: Busca en catalogo -> /productos?q={referencia}&buscar_por=referencia -> obtiene id_item.
+    PASO 2: Busca ventas -> /ventas/productos?id_item={id}&fecha_desde=...&fecha_hasta=...
+    USA para buscar ventas cuando el usuario da un CODIGO (ej: 'PAN09', 'GA04491').
+    PROHIBIDO usar /ventas?referencia= — no es confiable para descubrir productos."""
     return _buscar_ventas_por_referencia(referencia, fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
 def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
-                      id_co: Optional[int] = None, limite: int = 100) -> dict:
-    """Busca ventas por nombre, referencia o ID de producto. Usar cuando el usuario pregunte por un producto especifico."""
+                      id_co: Optional[int] = None, limite: int = 5) -> dict:
+    """[BUSCAR VENTAS DE PRODUCTO POR NOMBRE - TWO-STEP OBLIGATORIO]
+    PASO 1: Busca en catalogo -> /productos?q={producto}&buscar_por=nombre -> obtiene id_item.
+    PASO 2: Busca ventas -> /ventas/productos?id_item={id}&fecha_desde=...&fecha_hasta=...
+    Retorna venta_neta, margen, seccion, categoria y proveedor del producto.
+    USA para 'cuanto vendio X producto?', 'ventas del producto Y'.
+    PROHIBIDO usar /ventas?q= para buscar productos por nombre."""
     return _buscar_ventas(producto, fecha_desde, fecha_hasta, id_co, limite)
 
 @tool

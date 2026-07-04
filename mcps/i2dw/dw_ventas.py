@@ -452,23 +452,27 @@ def buscar_ventas(producto: str,
                 pass
 
     if not productos:
-        # Fallback final: intentar busqueda directa en ventas (puede ser mas tolerante)
-        logger.info(
-            "Catalogo sin resultados para '%s', intentando ventas directo",
-            producto)
-        return call_api("GET",
-                        "/ventas/", {
-                            "q": producto,
-                            "fecha_desde": fecha_desde,
-                            "fecha_hasta": fecha_hasta,
-                            "id_co": id_co,
-                            "limit": limite
-                        },
-                        timeout=REQUEST_TIMEOUT_SLOW)
+        # Sin resultados en catalogo
+        logger.info("Catalogo sin resultados para '%s'", producto)
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"No se encontro '{producto}' en el catalogo.",
+            "resultados": []
+        }, ensure_ascii=False)}]}
 
-    # Paso 2: Para cada producto encontrado, buscar sus ventas
-    # Usamos el primer producto como termino de busqueda en ventas
-    # porque /ventas?q= busca por id, referencia y nombre del producto
+    # Ordenar por relevancia: preferir nombres cortos que contengan TODAS las palabras
+    # Esto evita que accesorios largos (ej: "CAJA CONTROL VENTILADOR COMFORT SAMURAI")
+    # aparezcan antes que el producto real (ej: "VENTILADOR TURBO FRESCO SAMURAI")
+    query_words = set(producto.lower().split())
+    def _score(p):
+        name = str(p.get("descripcion") or p.get("nombre") or "").lower()
+        name_words = set(name.split())
+        matches = len(query_words & name_words)
+        # Mas matches + nombre mas corto relativo = mas relevante
+        return matches - (len(name_words) * 0.01)
+
+    productos.sort(key=_score, reverse=True)
+
+    # Paso 2: Para los productos mas relevantes, buscar ventas agregadas
     resultados = []
     ids_buscados = set()
 
@@ -479,12 +483,11 @@ def buscar_ventas(producto: str,
         ids_buscados.add(pid)
 
         ventas_result = call_api("GET",
-                                 "/ventas/", {
-                                     "q": str(pid),
+                                 "/ventas/productos", {
+                                     "id_item": int(pid),
                                      "fecha_desde": fecha_desde,
                                      "fecha_hasta": fecha_hasta,
                                      "id_co": id_co,
-                                     "limit": limite
                                  },
                                  timeout=REQUEST_TIMEOUT_SLOW)
 
@@ -492,8 +495,10 @@ def buscar_ventas(producto: str,
         try:
             ventas = json.loads(ventas_text)
             if isinstance(ventas, dict):
-                ventas = ventas.get("data", ventas.get("datos", []))
+                ventas = ventas.get("data", ventas.get("ventas", ventas.get("datos", [])))
             if isinstance(ventas, list) and ventas:
+                for v in ventas:
+                    v["_catalogo_match"] = str(p.get("descripcion", p.get("nombre", "")))
                 resultados.extend(ventas)
         except (json.JSONDecodeError, TypeError):
             continue
@@ -542,15 +547,34 @@ def buscar_ventas_por_referencia(referencia: str,
                                  fecha_hasta: str,
                                  id_co: Optional[int] = None,
                                  limite: int = 100) -> dict:
-    """Busca ventas por referencia exacta/parcial de producto."""
-    return call_api("GET",
-                    "/ventas/", {
-                        "referencia": referencia,
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "id_co": id_co,
-                        "limit": limite
-                    },
+    """Two-step: busca en catalogo por referencia, luego ventas por id_item."""
+    import json
+    # Paso 1: buscar producto por referencia en catalogo
+    cat = call_api("GET", "/productos/",
+                   {"q": referencia, "buscar_por": "referencia", "limit": 3},
+                   timeout=REQUEST_TIMEOUT_SLOW)
+    cat_text = cat.get("content", [{}])[0].get("text", "[]")
+    try:
+        data = json.loads(cat_text)
+        prods = data if isinstance(data, list) else data.get("data", data.get("items", []))
+    except (json.JSONDecodeError, TypeError):
+        prods = []
+
+    if not prods:
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"No se encontro producto con referencia '{referencia}'."
+        }, ensure_ascii=False)}]}
+
+    # Paso 2: buscar ventas del primer producto
+    pid = prods[0].get("id", prods[0].get("id_item", ""))
+    if not pid:
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"Producto encontrado pero sin id_item."
+        }, ensure_ascii=False)}]}
+
+    return call_api("GET", "/ventas/productos",
+                    {"id_item": int(pid), "fecha_desde": fecha_desde,
+                     "fecha_hasta": fecha_hasta, "id_co": id_co},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 
@@ -558,15 +582,15 @@ def top_productos(limite: int,
                   fecha_desde: str,
                   fecha_hasta: str,
                   id_co: Optional[int] = None,
-                  ordenar_por: str = "cantidad") -> dict:
-    """Top N productos mas vendidos en un periodo."""
+                  ordenar_por: str = "venta_neta") -> dict:
+    """Top N productos mas vendidos. Usa /ventas/productos?limit=N ya ordenado por venta_neta."""
     return call_api("GET",
-                    "/ventas/", {
-                        "top": limite,
+                    "/ventas/productos", {
                         "fecha_desde": fecha_desde,
                         "fecha_hasta": fecha_hasta,
                         "id_co": id_co,
-                        "ordenar_por": ordenar_por
+                        "ordenar_por": ordenar_por,
+                        "limit": limite
                     },
                     timeout=REQUEST_TIMEOUT_SLOW)
 
