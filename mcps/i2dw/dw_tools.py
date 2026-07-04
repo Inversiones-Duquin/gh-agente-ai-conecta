@@ -17,6 +17,7 @@ from i2dw.dw_ventas import (
     producto_mas_vendido as _producto_mas_vendido,
     categoria_top as _categoria_top,
     centros_por_venta as _centros_por_venta,
+    comparar_productos as _comparar_productos,
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
                                  get_productos_all as _get_productos_all,
@@ -106,12 +107,17 @@ def dw_get_ventas_mpagos(fecha_desde: str, fecha_hasta: str, id_co: Optional[int
 
 @tool
 def dw_get_productos_paginated(page: int = 1, page_size: int = 50) -> dict:
-    """Catalogo paginado. Navegar con has_next/has_previous."""
+    """[CATALOGO - NO USAR PARA RANKINGS] Catalogo paginado de productos.
+    SOLO para navegar el listado de productos. Para rankings de ventas usa dw_top_productos."""
     return _get_productos_paginated(page, page_size)
 
 @tool
 def dw_get_productos_all(id_item: Optional[int] = None) -> dict:
-    """Todos los productos sin paginacion. id_item opcional."""
+    """[CATALOGO - NO USAR PARA RANKINGS] Lista productos del catalogo (max 500).
+    SOLO para buscar informacion de productos especificos por ID.
+    Para rankings de productos mas vendidos USA dw_top_productos.
+    Para buscar el producto mas vendido USA dw_producto_mas_vendido.
+    NUNCA uses esta herramienta para 'top productos', 'los mas vendidos' o rankings."""
     return _get_productos_all(id_item)
 
 @tool
@@ -148,7 +154,10 @@ def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
 @tool
 def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, ordenar_por: str = "cantidad") -> dict:
-    """Top N productos mas vendidos. Usar para 'productos mas vendidos', 'top ventas', rankings."""
+    """[HERRAMIENTA PRINCIPAL PARA RANKINGS DE PRODUCTOS] Top N productos por ventas en un periodo.
+    USA ESTA para: 'top 20 productos mas vendidos', 'productos estrella del mes',
+    'ranking de productos', 'los mas vendidos', 'que productos lideran ventas?'.
+    NUNCA uses dw_get_productos_all ni dw_get_productos_paginated para rankings — son catalogo, no ventas."""
     return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
 
 @tool
@@ -189,9 +198,10 @@ def dw_reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
 def dw_producto_mas_vendido(fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None,
                               proveedor_id: Optional[str] = None) -> dict:
-    """Producto con mayor venta neta en un periodo. Resultado directo, 1 sola llamada.
-    Usar para: 'producto mas vendido del mes', 'que producto facturo mas?',
-    'producto estrella de junio', 'lo mas vendido del proveedor X'."""
+    """Producto #1 con mayor venta neta. Resultado directo (1 fila), sin calculos.
+    USA ESTA para: 'producto mas vendido del mes', 'que producto facturo mas?',
+    'producto estrella de junio', 'lo mas vendido del proveedor X'.
+    Para top N (no solo #1) usa dw_top_productos. NUNCA uses catalogo para esto."""
     return _producto_mas_vendido(fecha_desde, fecha_hasta, id_co, proveedor_id)
 
 
@@ -204,6 +214,18 @@ def dw_categoria_top(fecha_desde: str, fecha_hasta: str,
     Usar para: 'categoria mas rentable', 'categoria con mas ventas',
     'que categoria dejo mas margen este mes?'."""
     return _categoria_top(fecha_desde, fecha_hasta, id_co, ordenar_por)
+
+
+@tool
+def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
+                            comparar_con: str, limite: int = 10) -> dict:
+    """Productos que crecieron y cayeron entre dos periodos. UNA sola llamada al API.
+    comparar_con: fecha de inicio del periodo anterior (YYYY-MM-DD).
+    Retorna: productos_que_crecieron[] y productos_que_cayeron[] con variacion_pct y diferencia.
+    USA ESTA para: 'que productos cayeron este mes?', 'cuales crecieron vs mes pasado?',
+    'productos con mayor caida', 'productos que mas mejoraron',
+    'comparar catalogo de productos entre periodos'."""
+    return _comparar_productos(fecha_desde, fecha_hasta, comparar_con, limite)
 
 
 @tool
@@ -231,4 +253,5 @@ DW_TOOLS = [
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
     dw_producto_mas_vendido, dw_categoria_top, dw_centros_por_venta,
+    dw_comparar_productos,
 ]

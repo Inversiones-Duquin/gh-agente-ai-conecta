@@ -406,3 +406,76 @@ def centros_por_venta(fecha_desde: str, fecha_hasta: str,
     return call_api("GET", "/ventas/", {"agrupar_por": "co", "fecha_desde": fecha_desde,
                     "fecha_hasta": fecha_hasta, "orden": orden, "limit": limite},
                     timeout=REQUEST_TIMEOUT_SLOW)
+
+
+def comparar_productos(fecha_desde: str, fecha_hasta: str,
+                        comparar_con: str, limite: int = 10) -> dict:
+    """Productos que crecieron y cayeron entre dos periodos. Una sola llamada.
+    Usa /ventas/productos?comparar_con= que devuelve ambos periodos.
+    El MCP cruza por id_item, calcula variacion y retorna los que mas crecieron y cayeron."""
+    import json as _json, logging as _logging
+    _logger = _logging.getLogger("dw-ventas")
+
+    result = call_api("GET", "/ventas/productos",
+                      {"fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+                       "comparar_con": comparar_con, "limit": 200},
+                      timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "{}")
+    try:
+        data = _json.loads(raw)
+    except (_json.JSONDecodeError, TypeError):
+        return {"status": "error", "content": [{"text": "No se pudo procesar la comparacion de productos."}]}
+
+    actual = data.get("periodo_actual", {}).get("ventas", [])
+    anterior = data.get("periodo_anterior", {}).get("ventas", [])
+
+    if not actual:
+        return {"status": "success", "content": [{"text": _json.dumps({
+            "mensaje": "Sin datos de productos para el periodo actual."
+        }, ensure_ascii=False)}]}
+
+    # Indexar periodo anterior por id_item
+    ant_idx = {}
+    for p in anterior:
+        pid = str(p.get("id_item", ""))
+        if pid:
+            ant_idx[pid] = float(p.get("neto", 0) or 0)
+
+    # Calcular variacion para cada producto del periodo actual
+    productos = []
+    for p in actual:
+        pid = str(p.get("id_item", ""))
+        neto_actual = float(p.get("neto", 0) or 0)
+        neto_anterior = ant_idx.get(pid, 0)
+        if neto_anterior > 0:
+            var_pct = round(((neto_actual - neto_anterior) / neto_anterior) * 100, 2)
+        else:
+            var_pct = 100.0 if neto_actual > 0 else 0.0  # producto nuevo
+        diferencia = round(neto_actual - neto_anterior, 2)
+        productos.append({
+            "id_item": pid,
+            "referencia": p.get("referencia", ""),
+            "descripcion": p.get("descripcion", p.get("nombre", "")),
+            "neto_actual": round(neto_actual, 2),
+            "neto_anterior": round(neto_anterior, 2),
+            "diferencia": diferencia,
+            "variacion_pct": var_pct,
+        })
+
+    # Ordenar por variacion
+    crecieron = sorted([p for p in productos if p["variacion_pct"] > 0],
+                        key=lambda x: x["variacion_pct"], reverse=True)[:limite]
+    cayeron = sorted([p for p in productos if p["variacion_pct"] < 0],
+                       key=lambda x: x["variacion_pct"])[:limite]
+
+    _logger.info("Comparacion de productos: %d total, %d crecieron, %d cayeron",
+                 len(productos), len(crecieron), len(cayeron))
+
+    return {"status": "success", "content": [{"text": _json.dumps({
+        "periodo_actual": f"{fecha_desde} a {fecha_hasta}",
+        "periodo_anterior_comparado": comparar_con,
+        "total_productos": len(productos),
+        "productos_que_crecieron": crecieron,
+        "productos_que_cayeron": cayeron,
+    }, ensure_ascii=False)}]}
