@@ -83,10 +83,10 @@ def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] =
 def dw_comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
                         fecha_desde_2: str, fecha_hasta_2: str,
                         id_co: Optional[int] = None) -> dict:
-    """Compara ventas entre DOS periodos. USA ESTA para: 'comparame este mes vs el anterior',
-    'como vamos vs año pasado?', 'crecimos o decrecimos?', 'que % crecimos?',
-    'como estuvo junio vs mayo?', 'este trimestre vs el anterior?'.
-    Retorna totales de cada periodo + diferencia + % crecimiento + mejor/peor centro."""
+    """[SOLO PARA TOTALES CORPORATIVOS] Compara VENTA TOTAL entre dos periodos.
+    USA para: 'cuanto crecimos vs mes pasado?', 'como vamos vs año pasado?'.
+    Retorna: totales de venta neta y margen + % crecimiento + mejor/peor CENTRO.
+    NO USA para comparar PRODUCTOS — para eso existe dw_comparar_productos."""
     return _comparar_ventas(fecha_desde_1, fecha_hasta_1, fecha_desde_2, fecha_hasta_2, id_co)
 
 @tool
@@ -219,12 +219,12 @@ def dw_categoria_top(fecha_desde: str, fecha_hasta: str,
 @tool
 def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
                             comparar_con: str, limite: int = 10) -> dict:
-    """Productos que crecieron y cayeron entre dos periodos. UNA sola llamada al API.
-    comparar_con: fecha de inicio del periodo anterior (YYYY-MM-DD).
-    Retorna: productos_que_crecieron[] y productos_que_cayeron[] con variacion_pct y diferencia.
-    USA ESTA para: 'que productos cayeron este mes?', 'cuales crecieron vs mes pasado?',
-    'productos con mayor caida', 'productos que mas mejoraron',
-    'comparar catalogo de productos entre periodos'."""
+    """[PRODUCTOS QUE CRECEN O CAEN] Compara CADA PRODUCTO entre dos periodos. 1 SOLA llamada.
+    comparar_con: fecha inicio del periodo anterior (YYYY-MM-DD). Ej: '2026-05-01'.
+    Retorna: productos_que_crecieron[] y productos_que_cayeron[] con variacion_pct y neto.
+    USA ESTA para: 'que productos cayeron?', 'cuales crecieron vs mes pasado?',
+    'productos con mayor caida en junio vs mayo', 'comparativa de productos entre periodos'.
+    NO confundir con dw_comparar_ventas que compara TOTALES, no productos individuales."""
     return _comparar_productos(fecha_desde, fecha_hasta, comparar_con, limite)
 
 
