@@ -394,7 +394,7 @@ def buscar_ventas(producto: str,
                            "/productos/", {
                                "q": producto,
                                "buscar_por": "nombre",
-                               "limit": 10
+                               "limit": 50
                            },
                            timeout=REQUEST_TIMEOUT_SLOW)
     prod_text = prod_result.get("content", [{}])[0].get("text", "[]")
@@ -414,7 +414,7 @@ def buscar_ventas(producto: str,
                               "/productos/", {
                                   "q": producto,
                                   "buscar_por": "referencia",
-                                  "limit": 10
+                                  "limit": 50
                               },
                               timeout=REQUEST_TIMEOUT_SLOW)
         ref_text = ref_result.get("content", [{}])[0].get("text", "[]")
@@ -437,7 +437,7 @@ def buscar_ventas(producto: str,
                                  "/productos/", {
                                      "q": short_q,
                                      "buscar_por": "nombre",
-                                     "limit": 10
+                                     "limit": 50
                                  },
                                  timeout=REQUEST_TIMEOUT_SLOW)
             kw_text = kw_result.get("content", [{}])[0].get("text", "[]")
@@ -491,7 +491,7 @@ def buscar_ventas(producto: str,
     resultados = []
     ids_buscados = set()
 
-    for p in productos[:10]:  # buscar ventas de los 10 mas relevantes
+    for p in productos[:30]:  # buscar ventas de los 30 mas relevantes
         pid = p.get("id", p.get("id_item", ""))
         if not pid or pid in ids_buscados:
             continue
@@ -537,38 +537,54 @@ def buscar_ventas(producto: str,
             }]
         }
 
-    # Calcular total para que el LLM no tenga que sumar
+    # Ordenar resultados por venta_neta descendente — los mas vendidos primero
+    resultados.sort(
+        key=lambda r: float(r.get("venta_neta", 0) or r.get("neto", 0) or 0),
+        reverse=True
+    )
+
+    # Calcular totales agregados de TODOS los productos con ventas
     total_neta = sum(
         float(r.get("venta_neta", 0) or r.get("neto", 0) or 0)
         for r in resultados
     )
-    total_items = len(resultados)
+    total_unidades = sum(
+        int(r.get("cant_vendida", 0) or r.get("cantidad", 0) or 0)
+        for r in resultados
+    )
+    productos_con_venta = len([r for r in resultados if float(r.get("venta_neta", 0) or r.get("neto", 0) or 0) > 0])
 
-    # Construir resumen claro para el LLM
-    resumen = f"Se encontraron {len(productos)} productos en catalogo. "
-    if total_items > 0 and total_neta > 0:
-        resumen += f"{total_items} productos registraron ventas por un total de ${total_neta:,.0f} en el periodo."
+    # RESUMEN como texto plano primero — el LLM lo lee antes que el JSON
+    if total_neta > 0:
+        encabezado = (
+            f"TOTAL: {productos_con_venta} productos de '{producto}' vendieron "
+            f"${total_neta:,.0f} ({total_unidades} unidades) en el periodo {fecha_desde} a {fecha_hasta}."
+        )
     else:
-        resumen += "Ninguno registro ventas en el periodo."
+        encabezado = (
+            f"No se encontraron ventas de '{producto}' en el periodo {fecha_desde} a {fecha_hasta}. "
+            f"Se identificaron {len(productos)} productos en catalogo pero ninguno registro ventas."
+        )
 
-    resultados = resultados[:limite]
     return {
-        "status":
-        "success",
-        "content": [{
-            "text":
-            json.dumps(
-                {
-                    "resumen": resumen,
-                    "total_venta_neta": round(total_neta, 2),
-                    "productos_con_venta": total_items,
-                    "productos_encontrados": len(productos),
-                    "metodo":
-                    f"two-step (catalogo x {', '.join(estrategias)} + ventas)",
-                    "resultados": resultados
-                },
-                ensure_ascii=False)
-        }]
+        "status": "success",
+        "content": [
+            # Bloque 1: texto plano que el LLM lee primero
+            {"text": encabezado},
+            # Bloque 2: JSON detallado
+            {"text": json.dumps({
+                "total_venta_neta": round(total_neta, 2),
+                "total_unidades": total_unidades,
+                "productos_con_venta": productos_con_venta,
+                "productos_en_catalogo": len(productos),
+                "metodo": f"catalogo ({', '.join(estrategias)}) + ventas/productos",
+                "top_productos": sorted(
+                    [r for r in resultados if float(r.get("venta_neta", 0) or r.get("neto", 0) or 0) > 0],
+                    key=lambda x: float(x.get("venta_neta", 0) or x.get("neto", 0) or 0),
+                    reverse=True
+                )[:limite]
+            }, ensure_ascii=False)}
+        ]
     }
 
 
