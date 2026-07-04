@@ -537,7 +537,20 @@ def buscar_ventas(producto: str,
             }]
         }
 
-    # Limitar y retornar
+    # Calcular total para que el LLM no tenga que sumar
+    total_neta = sum(
+        float(r.get("venta_neta", 0) or r.get("neto", 0) or 0)
+        for r in resultados
+    )
+    total_items = len(resultados)
+
+    # Construir resumen claro para el LLM
+    resumen = f"Se encontraron {len(productos)} productos en catalogo. "
+    if total_items > 0 and total_neta > 0:
+        resumen += f"{total_items} productos registraron ventas por un total de ${total_neta:,.0f} en el periodo."
+    else:
+        resumen += "Ninguno registro ventas en el periodo."
+
     resultados = resultados[:limite]
     return {
         "status":
@@ -546,8 +559,10 @@ def buscar_ventas(producto: str,
             "text":
             json.dumps(
                 {
+                    "resumen": resumen,
+                    "total_venta_neta": round(total_neta, 2),
+                    "productos_con_venta": total_items,
                     "productos_encontrados": len(productos),
-                    "total_ventas": len(resultados),
                     "metodo":
                     f"two-step (catalogo x {', '.join(estrategias)} + ventas)",
                     "resultados": resultados
