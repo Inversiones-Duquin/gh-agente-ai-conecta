@@ -363,229 +363,64 @@ def buscar_ventas(producto: str,
                   fecha_desde: str,
                   fecha_hasta: str,
                   id_co: Optional[int] = None,
-                  limite: int = 100) -> dict:
-    """Busca ventas con two-step: catalogo primero (LIKE prefix), ventas despues.
-
-    Flujo:
-    1. Si no es un ID numerico puro, busca en /productos?q=&buscar_por=nombre
-    2. Con los IDs encontrados, consulta /ventas?q={id_item}&fecha_desde=&fecha_hasta=
-    3. Si es un ID numerico, busca directo en ventas
-    """
-    import json, logging
+                  limite: int = 20) -> dict:
+    """Busca ventas de un producto por nombre. UNA sola llamada a /ventas/productos?q=.
+    Ideal para 'cuanto vendio X en el periodo Y?'."""
+    import json, logging, unicodedata
     logger = logging.getLogger("dw-ventas")
 
-    # Si es un ID numerico puro, buscar directo en ventas
+    # Normalizar: quitar acentos para busqueda tolerante ("presión" -> "presion")
+    producto = ''.join(
+        c for c in unicodedata.normalize('NFD', producto)
+        if unicodedata.category(c) != 'Mn'
+    )
+
+    params = {
+        "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+        "limit": 200, "ordenar_por": "venta_neta"
+    }
+    if id_co:
+        params["id_co"] = id_co
+
+    # Numerico = id_item. Texto = q (busqueda por nombre en la misma tabla)
     if producto.strip().isdigit():
-        return call_api(
-            "GET", "/ventas/", {
-                "q": producto,
-                "fecha_desde": fecha_desde,
-                "fecha_hasta": fecha_hasta,
-                "id_co": id_co,
-                "limit": limite
-            })
+        params["id_item"] = int(producto)
+    else:
+        params["q"] = producto
 
-    # Paso 1: Buscar en catalogo con multiples estrategias
-    productos = []
-    estrategias = []
-
-    # Estrategia A: nombre completo (prefix match)
-    prod_result = call_api("GET",
-                           "/productos/", {
-                               "q": producto,
-                               "buscar_por": "nombre",
-                               "limit": 50
-                           },
-                           timeout=REQUEST_TIMEOUT_SLOW)
-    prod_text = prod_result.get("content", [{}])[0].get("text", "[]")
+    result = call_api("GET", "/ventas/productos", params, timeout=REQUEST_TIMEOUT_SLOW)
+    raw = result.get("content", [{}])[0].get("text", "[]")
     try:
-        data = json.loads(prod_text)
-        prods = data if isinstance(data, list) else data.get(
-            "data", data.get("items", []))
-        if prods:
-            productos = prods
-            estrategias.append("nombre completo")
+        data = json.loads(raw)
+        resultados = data if isinstance(data, list) else \
+                     data.get("data", data.get("ventas", data.get("items", [])))
     except (json.JSONDecodeError, TypeError):
-        pass
-
-    # Estrategia B: por referencia (el usuario pudo dar una ref)
-    if not productos:
-        ref_result = call_api("GET",
-                              "/productos/", {
-                                  "q": producto,
-                                  "buscar_por": "referencia",
-                                  "limit": 50
-                              },
-                              timeout=REQUEST_TIMEOUT_SLOW)
-        ref_text = ref_result.get("content", [{}])[0].get("text", "[]")
-        try:
-            data = json.loads(ref_text)
-            prods = data if isinstance(data, list) else data.get(
-                "data", data.get("items", []))
-            if prods:
-                productos = prods
-                estrategias.append("referencia")
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Estrategia C: primeras 3 palabras clave (mas tolerante con prefix)
-    if not productos:
-        palabras = producto.split()[:3]
-        if palabras:
-            short_q = " ".join(palabras)
-            kw_result = call_api("GET",
-                                 "/productos/", {
-                                     "q": short_q,
-                                     "buscar_por": "nombre",
-                                     "limit": 50
-                                 },
-                                 timeout=REQUEST_TIMEOUT_SLOW)
-            kw_text = kw_result.get("content", [{}])[0].get("text", "[]")
-            try:
-                data = json.loads(kw_text)
-                prods = data if isinstance(data, list) else data.get(
-                    "data", data.get("items", []))
-                if prods:
-                    productos = prods
-                    estrategias.append(f"palabras clave: '{short_q}'")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-    if not productos:
-        # Sin resultados en catalogo
-        logger.info("Catalogo sin resultados para '%s'", producto)
-        return {"status": "success", "content": [{"text": json.dumps({
-            "mensaje": f"No se encontro '{producto}' en el catalogo.",
-            "resultados": []
-        }, ensure_ascii=False)}]}
-
-    # Ordenar por relevancia: preferir productos que EMPIECEN con las palabras buscadas
-    # Filtrar stop words que causan falsos matches ("a", "de", "la", "el", "en", ...)
-    STOP_WORDS = {"a", "de", "la", "el", "en", "con", "por", "para", "del", "los",
-                  "las", "un", "una", "y", "o", "que", "es", "se", "su", "al", "lo"}
-    query_words = [w for w in producto.lower().split() if w not in STOP_WORDS]
-    if not query_words:
-        query_words = producto.lower().split()  # si todas son stop words, usar todas
-
-    def _score(p):
-        name = str(p.get("descripcion") or p.get("nombre") or "").lower()
-        name_words = name.split()
-        score = 0
-        for qw in query_words:
-            if qw in name_words:
-                score += 1
-                pos = name_words.index(qw)
-                if pos <= 1:
-                    score += 3
-        # Penalizar nombres con palabras de accesorio
-        ACC_WORDS = {"cacha", "manija", "asa", "tapa", "accesorio", "repuesto",
-                     "control", "caja", "pinonera", "condensador", "base", "soporte"}
-        for aw in ACC_WORDS:
-            if aw in name_words:
-                score -= 2
-        return score
-
-    productos.sort(key=_score, reverse=True)
-
-    # Paso 2: Para los productos mas relevantes, buscar ventas agregadas
-    resultados = []
-    ids_buscados = set()
-
-    for p in productos[:30]:  # buscar ventas de los 30 mas relevantes
-        pid = p.get("id", p.get("id_item", ""))
-        if not pid or pid in ids_buscados:
-            continue
-        ids_buscados.add(pid)
-
-        ventas_result = call_api("GET",
-                                 "/ventas/productos", {
-                                     "id_item": int(pid),
-                                     "fecha_desde": fecha_desde,
-                                     "fecha_hasta": fecha_hasta,
-                                     "id_co": id_co,
-                                 },
-                                 timeout=REQUEST_TIMEOUT_SLOW)
-
-        ventas_text = ventas_result.get("content", [{}])[0].get("text", "[]")
-        try:
-            ventas = json.loads(ventas_text)
-            if isinstance(ventas, dict):
-                ventas = ventas.get("data", ventas.get("ventas", ventas.get("datos", [])))
-            if isinstance(ventas, list) and ventas:
-                for v in ventas:
-                    v["_catalogo_match"] = str(p.get("descripcion", p.get("nombre", "")))
-                resultados.extend(ventas)
-        except (json.JSONDecodeError, TypeError):
-            continue
+        resultados = []
 
     if not resultados:
-        nombres = ", ".join(
-            str(p.get("descripcion", p.get("id", ""))) for p in productos[:5])
-        return {
-            "status":
-            "success",
-            "content": [{
-                "text":
-                json.dumps(
-                    {
-                        "mensaje":
-                        f"Se encontraron productos en catalogo ({nombres}) pero sin ventas en el periodo.",
-                        "productos_encontrados": len(productos),
-                        "resultados": []
-                    },
-                    ensure_ascii=False)
-            }]
-        }
+        return {"status": "success", "content": [{"text": json.dumps({
+            "mensaje": f"No se encontraron ventas de '{producto}' en {fecha_desde} a {fecha_hasta}."
+        }, ensure_ascii=False)}]}
 
-    # Ordenar resultados por venta_neta descendente — los mas vendidos primero
-    resultados.sort(
-        key=lambda r: float(r.get("venta_neta", 0) or r.get("neto", 0) or 0),
-        reverse=True
+    # Ya vienen ordenados por venta_neta DESC desde la API
+    total_neta = sum(float(r.get("venta_neta", 0) or r.get("neto", 0) or 0)
+                     for r in resultados)
+    total_und = sum(int(r.get("cant_vendida", 0) or 0) for r in resultados)
+
+    encabezado = (
+        f"TOTAL: {len(resultados)} productos de '{producto}' vendieron "
+        f"${total_neta:,.0f} ({total_und} unidades) en {fecha_desde} a {fecha_hasta}."
     )
 
-    # Calcular totales agregados de TODOS los productos con ventas
-    total_neta = sum(
-        float(r.get("venta_neta", 0) or r.get("neto", 0) or 0)
-        for r in resultados
-    )
-    total_unidades = sum(
-        int(r.get("cant_vendida", 0) or r.get("cantidad", 0) or 0)
-        for r in resultados
-    )
-    productos_con_venta = len([r for r in resultados if float(r.get("venta_neta", 0) or r.get("neto", 0) or 0) > 0])
-
-    # RESUMEN como texto plano primero — el LLM lo lee antes que el JSON
-    if total_neta > 0:
-        encabezado = (
-            f"TOTAL: {productos_con_venta} productos de '{producto}' vendieron "
-            f"${total_neta:,.0f} ({total_unidades} unidades) en el periodo {fecha_desde} a {fecha_hasta}."
-        )
-    else:
-        encabezado = (
-            f"No se encontraron ventas de '{producto}' en el periodo {fecha_desde} a {fecha_hasta}. "
-            f"Se identificaron {len(productos)} productos en catalogo pero ninguno registro ventas."
-        )
-
-    return {
-        "status": "success",
-        "content": [
-            # Bloque 1: texto plano que el LLM lee primero
-            {"text": encabezado},
-            # Bloque 2: JSON detallado
-            {"text": json.dumps({
-                "total_venta_neta": round(total_neta, 2),
-                "total_unidades": total_unidades,
-                "productos_con_venta": productos_con_venta,
-                "productos_en_catalogo": len(productos),
-                "metodo": f"catalogo ({', '.join(estrategias)}) + ventas/productos",
-                "top_productos": sorted(
-                    [r for r in resultados if float(r.get("venta_neta", 0) or r.get("neto", 0) or 0) > 0],
-                    key=lambda x: float(x.get("venta_neta", 0) or x.get("neto", 0) or 0),
-                    reverse=True
-                )[:limite]
-            }, ensure_ascii=False)}
-        ]
-    }
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": json.dumps({
+            "total_venta_neta": round(total_neta, 2),
+            "total_unidades": total_und,
+            "productos_encontrados": len(resultados),
+            "top_productos": resultados[:limite]
+        }, ensure_ascii=False)}
+    ]}
 
 
 def buscar_ventas_por_referencia(referencia: str,
@@ -593,34 +428,10 @@ def buscar_ventas_por_referencia(referencia: str,
                                  fecha_hasta: str,
                                  id_co: Optional[int] = None,
                                  limite: int = 100) -> dict:
-    """Two-step: busca en catalogo por referencia, luego ventas por id_item."""
-    import json
-    # Paso 1: buscar producto por referencia en catalogo
-    cat = call_api("GET", "/productos/",
-                   {"q": referencia, "buscar_por": "referencia", "limit": 3},
-                   timeout=REQUEST_TIMEOUT_SLOW)
-    cat_text = cat.get("content", [{}])[0].get("text", "[]")
-    try:
-        data = json.loads(cat_text)
-        prods = data if isinstance(data, list) else data.get("data", data.get("items", []))
-    except (json.JSONDecodeError, TypeError):
-        prods = []
-
-    if not prods:
-        return {"status": "success", "content": [{"text": json.dumps({
-            "mensaje": f"No se encontro producto con referencia '{referencia}'."
-        }, ensure_ascii=False)}]}
-
-    # Paso 2: buscar ventas del primer producto
-    pid = prods[0].get("id", prods[0].get("id_item", ""))
-    if not pid:
-        return {"status": "success", "content": [{"text": json.dumps({
-            "mensaje": f"Producto encontrado pero sin id_item."
-        }, ensure_ascii=False)}]}
-
+    """Busca ventas por referencia de producto. Una sola llamada a /ventas/productos?referencia=."""
     return call_api("GET", "/ventas/productos",
-                    {"id_item": int(pid), "fecha_desde": fecha_desde,
-                     "fecha_hasta": fecha_hasta, "id_co": id_co},
+                    {"referencia": referencia, "fecha_desde": fecha_desde,
+                     "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 
