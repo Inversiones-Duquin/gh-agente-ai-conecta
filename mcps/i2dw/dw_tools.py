@@ -122,7 +122,10 @@ def dw_get_productos_all(id_item: Optional[int] = None) -> dict:
 
 @tool
 def dw_buscar_productos(texto: str, buscar_por: str = "nombre", limite: int = 200) -> dict:
-    """Busca productos en el catalogo por nombre o referencia. Usar para 'cuantos productos de tipo X', 'productos que contengan Y'."""
+    """[SOLO CATALOGO - NO MUESTRA VENTAS] Busca productos en el catalogo por nombre o referencia.
+    Retorna id, descripcion, referencia — pero NO ventas, NO neto, NO margen.
+    SOLO para: 'cuantos productos tipo X hay?', 'existe el producto Y?'.
+    Para ventas de un producto USA dw_buscar_ventas. Para top productos USA dw_top_productos."""
     return _buscar_productos(texto, buscar_por, limite)
 
 @tool
@@ -152,12 +155,10 @@ def dw_buscar_ventas_por_referencia(referencia: str, fecha_desde: str, fecha_has
 @tool
 def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, limite: int = 5) -> dict:
-    """[BUSCAR VENTAS DE PRODUCTO POR NOMBRE - TWO-STEP OBLIGATORIO]
-    PASO 1: Busca en catalogo -> /productos?q={producto}&buscar_por=nombre -> obtiene id_item.
-    PASO 2: Busca ventas -> /ventas/productos?id_item={id}&fecha_desde=...&fecha_hasta=...
-    Retorna venta_neta, margen, seccion, categoria y proveedor del producto.
-    USA para 'cuanto vendio X producto?', 'ventas del producto Y'.
-    PROHIBIDO usar /ventas?q= para buscar productos por nombre."""
+    """[VENTAS DE UN PRODUCTO - USA ESTA] Busca cuanto vendio un producto por nombre.
+    Hace two-step automatico: 1) catalogo -> id_item, 2) ventas agregadas con neto y margen.
+    USA PARA: 'cuanto vendio X?', 'ventas de Y en junio?', 'como le fue a Z este mes?'.
+    NUNCA uses dw_buscar_productos para preguntas de ventas — esa solo devuelve catalogo sin ventas."""
     return _buscar_ventas(producto, fecha_desde, fecha_hasta, id_co, limite)
 
 @tool

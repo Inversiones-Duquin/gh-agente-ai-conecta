@@ -459,16 +459,31 @@ def buscar_ventas(producto: str,
             "resultados": []
         }, ensure_ascii=False)}]}
 
-    # Ordenar por relevancia: preferir nombres cortos que contengan TODAS las palabras
-    # Esto evita que accesorios largos (ej: "CAJA CONTROL VENTILADOR COMFORT SAMURAI")
-    # aparezcan antes que el producto real (ej: "VENTILADOR TURBO FRESCO SAMURAI")
-    query_words = set(producto.lower().split())
+    # Ordenar por relevancia: preferir productos que EMPIECEN con las palabras buscadas
+    # Filtrar stop words que causan falsos matches ("a", "de", "la", "el", "en", ...)
+    STOP_WORDS = {"a", "de", "la", "el", "en", "con", "por", "para", "del", "los",
+                  "las", "un", "una", "y", "o", "que", "es", "se", "su", "al", "lo"}
+    query_words = [w for w in producto.lower().split() if w not in STOP_WORDS]
+    if not query_words:
+        query_words = producto.lower().split()  # si todas son stop words, usar todas
+
     def _score(p):
         name = str(p.get("descripcion") or p.get("nombre") or "").lower()
-        name_words = set(name.split())
-        matches = len(query_words & name_words)
-        # Mas matches + nombre mas corto relativo = mas relevante
-        return matches - (len(name_words) * 0.01)
+        name_words = name.split()
+        score = 0
+        for qw in query_words:
+            if qw in name_words:
+                score += 1
+                pos = name_words.index(qw)
+                if pos <= 1:
+                    score += 3
+        # Penalizar nombres con palabras de accesorio
+        ACC_WORDS = {"cacha", "manija", "asa", "tapa", "accesorio", "repuesto",
+                     "control", "caja", "pinonera", "condensador", "base", "soporte"}
+        for aw in ACC_WORDS:
+            if aw in name_words:
+                score -= 2
+        return score
 
     productos.sort(key=_score, reverse=True)
 
@@ -476,7 +491,7 @@ def buscar_ventas(producto: str,
     resultados = []
     ids_buscados = set()
 
-    for p in productos[:5]:  # max 5 productos para no saturar
+    for p in productos[:10]:  # buscar ventas de los 10 mas relevantes
         pid = p.get("id", p.get("id_item", ""))
         if not pid or pid in ids_buscados:
             continue
