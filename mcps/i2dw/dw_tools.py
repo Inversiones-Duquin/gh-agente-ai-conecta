@@ -49,7 +49,7 @@ def dw_validate_token() -> dict:
 @tool
 def dw_get_centros_all() -> dict:
     """[SOLO PARA CONSULTAS ADMINISTRATIVAS] Lista centros de operacion con id_co y nombre.
-    NO necesitas llamar esta herramienta antes de dw_resumen_ventas, dw_centros_por_venta
+    NO necesitas llamar esta herramienta antes de dw_resumen_ventas, dw_ventas_por_dimension
     o dw_comparar_ventas — esas herramientas YA devuelven nombres o IDs de centros.
     Solo usa esto si el usuario pregunta explicitamente 'que tiendas tenemos?' o 'dame el listado de sedes'."""
     return _get_centros_all()
@@ -67,7 +67,7 @@ def dw_buscar_proveedor_por_nombre(nombre: str) -> dict:
 @tool
 def dw_get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """[USO RESTRINGIDO] Datos diarios crudos de ventas. SOLO para analisis detallados dia a dia.
-    Para totales usa dw_resumen_ventas. Para rankings de tiendas usa dw_centros_por_venta.
+    Para totales usa dw_resumen_ventas. Para rankings de tiendas usa dw_ventas_por_dimension.
     Para comparar periodos usa dw_comparar_ventas. NO uses esta para 'cuanto vendimos' o rankings."""
     return _get_ventas(fecha_desde, fecha_hasta, id_co)
 
@@ -77,7 +77,7 @@ def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] =
     """Total de ventas corporativo. Usa ESTA herramienta para: 'cuanto vendimos?', 'como cerro el mes?',
     'ventas totales de julio?', 'cuanto facturamos ayer?', 'como vamos hoy?'.
     Retorna total_neto, total_costo, total_margen, margen_porcentual, total_descuento, total_impuesto.
-    NO uses esta para rankings de tiendas — para eso usa dw_centros_por_venta."""
+    NO uses esta para rankings de tiendas — para eso usa dw_ventas_por_dimension."""
     return _resumen_ventas(fecha_desde, fecha_hasta, id_co)
 
 
@@ -245,19 +245,6 @@ def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
     return _comparar_productos(fecha_desde, fecha_hasta, comparar_con, limite)
 
 
-@tool
-def dw_centros_por_venta(fecha_desde: str, fecha_hasta: str,
-                           orden: str = "desc", limite: int = 5) -> dict:
-    """[HERRAMIENTA PRINCIPAL PARA RANKINGS DE TIENDAS] Retorna sedes ordenadas por venta neta.
-    La API agrupa, suma y ordena — el resultado son solo N filas exactas, sin calculos del MCP.
-    orden='asc' = las que MENOS venden primero. orden='desc' = las que MAS venden primero.
-    USA ESTA para: 'que tiendas menos han vendido?', 'top tiendas del mes',
-    'cuales son las sedes con menor facturacion?', 'ranking de tiendas por venta',
-    'que sede vendio mas?', 'cuales son las 5 tiendas que mas facturaron?'.
-    NO uses dw_get_ventas ni dw_resumen_ventas para rankings de tiendas."""
-    return _centros_por_venta(fecha_desde, fecha_hasta, orden, limite)
-
-
 DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
@@ -269,6 +256,6 @@ DW_TOOLS = [
     dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_ventas_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
-    dw_producto_mas_vendido, dw_categoria_top, dw_centros_por_venta,
+    dw_producto_mas_vendido,
     dw_comparar_productos,
 ]
