@@ -452,19 +452,46 @@ def top_productos(limite: int,
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 
-def margen_por_dimension(dimension: str,
+def ventas_por_dimension(dimension: str,
                          fecha_desde: str,
                          fecha_hasta: str,
                          id_co: Optional[int] = None,
-                         limite: int = 50) -> dict:
-    """Margen agrupado por categoria, seccion, producto o proveedor."""
+                         limit: int = 20,
+                         orden: str = "desc",
+                         ordenar_por: str = "neto") -> dict:
+    """Ventas agrupadas por dimension. Una sola llamada, resultado directo.
+    dimension: 'categoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
+    orden: 'asc' (menor primero) o 'desc' (mayor primero)
+    ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
+    Ej: categoria mas rentable -> dimension='categoria', ordenar_por='margen'
+        tiendas que menos venden -> dimension='co', orden='asc'"""
     return call_api("GET",
                     "/ventas/", {
                         "agrupar_por": dimension,
                         "fecha_desde": fecha_desde,
                         "fecha_hasta": fecha_hasta,
                         "id_co": id_co,
-                        "limit": limite
+                        "limit": limit,
+                        "orden": orden,
+                        "ordenar_por_agrupado": ordenar_por,
+                    },
+                    timeout=REQUEST_TIMEOUT_SLOW)
+
+
+def ventas_por_medio_pago(fecha_desde: str,
+                          fecha_hasta: str,
+                          id_co: Optional[int] = None,
+                          orden: str = "desc",
+                          ordenar_por: str = "neto") -> dict:
+    """Ventas agrupadas por medio de pago. Una sola llamada.
+    ordenar_por: 'neto', 'cantidad'. orden: 'asc' o 'desc'."""
+    return call_api("GET",
+                    "/ventas/mpagos", {
+                        "fecha_desde": fecha_desde,
+                        "fecha_hasta": fecha_hasta,
+                        "id_co": id_co,
+                        "orden": orden,
+                        "ordenar_por": ordenar_por,
                     },
                     timeout=REQUEST_TIMEOUT_SLOW)
 
@@ -534,43 +561,6 @@ def producto_mas_vendido(fecha_desde: str,
     return call_api("GET",
                     "/ventas/productos",
                     params,
-                    timeout=REQUEST_TIMEOUT_SLOW)
-
-
-def categoria_top(fecha_desde: str,
-                  fecha_hasta: str,
-                  id_co: Optional[int] = None,
-                  ordenar_por: str = "margen") -> dict:
-    """Categoria top por margen o venta neta. Una sola llamada, resultado directo.
-    Usa /ventas?agrupar_por=categoria&limit=1.
-    ordenar_por: 'margen' (default, mas rentable) o 'venta_neta' (mas volumen)."""
-    return call_api("GET",
-                    "/ventas/", {
-                        "agrupar_por": "categoria",
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "id_co": id_co,
-                        "limit": 1,
-                        "ordenar_por": ordenar_por
-                    },
-                    timeout=REQUEST_TIMEOUT_SLOW)
-
-
-def centros_por_venta(fecha_desde: str,
-                      fecha_hasta: str,
-                      orden: str = "desc",
-                      limite: int = 5) -> dict:
-    """Sedes ordenadas por venta neta. El API agrupa, suma y ordena — retorna solo N filas.
-    Usa /ventas?agrupar_por=co&orden=asc|desc&limit=N.
-    orden='asc' = las que menos venden primero. orden='desc' = las que mas venden primero."""
-    return call_api("GET",
-                    "/ventas/", {
-                        "agrupar_por": "co",
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "orden": orden,
-                        "limit": limite
-                    },
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 

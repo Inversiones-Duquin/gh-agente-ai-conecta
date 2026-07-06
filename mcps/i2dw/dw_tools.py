@@ -8,15 +8,14 @@ from i2dw.dw_auth import validate_token as _validate_token
 from i2dw.dw_centros import get_centros_all as _get_centros_all
 from i2dw.dw_ventas import (
     get_ventas as _get_ventas, get_ventas_item as _get_ventas_item,
-    get_ventas_clientes as _get_ventas_clientes, get_ventas_mpagos as _get_ventas_mpagos,
+    get_ventas_clientes as _get_ventas_clientes,
     buscar_ventas as _buscar_ventas, buscar_ventas_por_referencia as _buscar_ventas_por_referencia,
-    top_productos as _top_productos, margen_por_dimension as _margen_por_dimension,
+    top_productos as _top_productos, ventas_por_dimension as _ventas_por_dimension,
+    ventas_por_medio_pago as _ventas_por_medio_pago,
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
     rotacion_inventario as _rotacion_inventario, resumen_ventas as _resumen_ventas,
     comparar_ventas as _comparar_ventas,
     producto_mas_vendido as _producto_mas_vendido,
-    categoria_top as _categoria_top,
-    centros_por_venta as _centros_por_venta,
     comparar_productos as _comparar_productos,
 )
 from i2dw.dw_productos import (get_productos_paginated as _get_productos_paginated,
@@ -104,9 +103,15 @@ def dw_get_ventas_clientes(fecha_desde: str, fecha_hasta: str, id_co: Optional[i
     return _get_ventas_clientes(fecha_desde, fecha_hasta, id_co, id_cliente)
 
 @tool
-def dw_get_ventas_mpagos(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
-    """Ventas x medio de pago (efectivo, tarjetas, etc.)."""
-    return _get_ventas_mpagos(fecha_desde, fecha_hasta, id_co)
+def dw_ventas_por_medio_pago(fecha_desde: str, fecha_hasta: str,
+                               id_co: Optional[int] = None,
+                               orden: str = "desc",
+                               ordenar_por: str = "neto") -> dict:
+    """Ventas agrupadas por medio de pago. Una sola llamada, resultado directo.
+    ordenar_por: 'neto' o 'cantidad'. orden: 'asc' o 'desc'.
+    USA para: 'como pagan mis clientes?', 'efectivo vs tarjeta?',
+    'que medio de pago genera mas volumen?'."""
+    return _ventas_por_medio_pago(fecha_desde, fecha_hasta, id_co, orden, ordenar_por)
 
 @tool
 def dw_get_productos_paginated(page: int = 1, page_size: int = 50) -> dict:
@@ -175,10 +180,19 @@ def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
     return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
 
 @tool
-def dw_margen_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
-                              id_co: Optional[int] = None, limite: int = 50) -> dict:
-    """Margen agrupado por categoria/seccion/producto/proveedor. Usar para 'categoria mas rentable', 'margen por seccion'."""
-    return _margen_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limite)
+def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
+                              id_co: Optional[int] = None, limit: int = 20,
+                              orden: str = "desc", ordenar_por: str = "neto") -> dict:
+    """[HERRAMIENTA UNIFICADA DE ANALISIS] Ventas agrupadas por cualquier dimension.
+    dimension: 'categoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
+    ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
+    orden: 'desc' (top) o 'asc' (bottom)
+    Ejemplos:
+    - 'categoria mas rentable?' -> dimension='categoria', ordenar_por='margen', limit=1
+    - 'tiendas que menos venden?' -> dimension='co', orden='asc'
+    - 'top 5 marcas?' -> dimension='marca', limit=5
+    - 'mejor seccion?' -> dimension='seccion', ordenar_por='neto', limit=1"""
+    return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por)
 
 @tool
 def dw_comparar_periodos(id_co: int, fecha_desde: str, fecha_hasta: str, comparar_con: str) -> dict:
@@ -220,17 +234,6 @@ def dw_producto_mas_vendido(fecha_desde: str, fecha_hasta: str,
 
 
 @tool
-def dw_categoria_top(fecha_desde: str, fecha_hasta: str,
-                      id_co: Optional[int] = None,
-                      ordenar_por: str = "margen") -> dict:
-    """Categoria mas rentable o con mayor venta. Resultado directo, 1 sola llamada.
-    ordenar_por: 'margen' para la mas rentable, 'venta_neta' para la de mayor volumen.
-    Usar para: 'categoria mas rentable', 'categoria con mas ventas',
-    'que categoria dejo mas margen este mes?'."""
-    return _categoria_top(fecha_desde, fecha_hasta, id_co, ordenar_por)
-
-
-@tool
 def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
                             comparar_con: str, limite: int = 10) -> dict:
     """[PRODUCTOS QUE CRECEN O CAEN] Compara CADA PRODUCTO entre dos periodos. 1 SOLA llamada.
@@ -260,10 +263,10 @@ DW_TOOLS = [
     dw_get_centros_all,
     dw_listar_proveedores, dw_buscar_proveedor_por_nombre,
     dw_get_ventas, dw_resumen_ventas, dw_comparar_ventas,
-    dw_get_ventas_item, dw_get_ventas_clientes, dw_get_ventas_mpagos,
+    dw_get_ventas_item, dw_get_ventas_clientes, dw_ventas_por_medio_pago,
     dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,
-    dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_margen_por_dimension,
+    dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_ventas_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
     dw_producto_mas_vendido, dw_categoria_top, dw_centros_por_venta,
