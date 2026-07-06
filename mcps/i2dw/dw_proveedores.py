@@ -1,6 +1,7 @@
 """Endpoints de proveedores: reporte, busqueda, indice."""
 import difflib
 import json, logging, time
+from collections import defaultdict
 from typing import Optional
 from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW, MAX_ADMIN_LIST_ITEMS
 
@@ -11,9 +12,77 @@ _index_ts: float = 0.0
 
 def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: Optional[str] = None,
                                 proveedor_id: Optional[str] = None) -> dict:
-    """Reporte ventas/inventario/costo x proveedor (plan 007)."""
-    return call_api("GET", "/ventas-proveedores/", {"fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
-                    "proveedor_id": proveedor_id}, timeout=REQUEST_TIMEOUT_SLOW)
+    """Reporte del proveedor con totales agregados del periodo."""
+    import json as _json
+
+    result = call_api("GET", "/ventas-proveedores/", {
+        "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
+        "proveedor_id": proveedor_id
+    }, timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "{}")
+    try:
+        data = _json.loads(raw)
+        filas = data.get("datos", data.get("data", []))
+    except (_json.JSONDecodeError, TypeError):
+        filas = []
+
+    if not filas:
+        return {"status": "success", "content": [{"text": _json.dumps({
+            "mensaje": "Sin datos para el periodo solicitado.",
+            "total_venta_neta": 0, "total_unidades": 0,
+            "total_costo_venta": 0, "total_inventario": 0,
+            "productos": 0, "tiendas": 0
+        }, ensure_ascii=False)}]}
+
+    # Agregar totales del periodo
+    total_unidades = sum(int(f.get("cantidad_vendida", 0) or 0) for f in filas)
+    total_neta = sum(float(f.get("venta_neta", 0) or 0) for f in filas)
+    total_costo = sum(float(f.get("coste_venta", 0) or 0) for f in filas)
+    total_inv = sum(int(f.get("cantidad_inventario", 0) or 0) for f in filas)
+
+    # Agrupar por producto y por tienda
+    por_producto = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0, "inventario": 0})
+    por_tienda = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+    for f in filas:
+        nombre = f.get("descripcion_articulo", "")
+        tienda = f.get("punto_de_venta", "")
+        unds = int(f.get("cantidad_vendida", 0) or 0)
+        neto = float(f.get("venta_neta", 0) or 0)
+        costo = float(f.get("coste_venta", 0) or 0)
+        inv = int(f.get("cantidad_inventario", 0) or 0)
+        por_producto[nombre]["unidades"] += unds
+        por_producto[nombre]["venta_neta"] += neto
+        por_producto[nombre]["costo"] += costo
+        por_producto[nombre]["inventario"] += inv
+        por_tienda[tienda]["unidades"] += unds
+        por_tienda[tienda]["venta_neta"] += neto
+        por_tienda[tienda]["costo"] += costo
+
+    top_productos = sorted(por_producto.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:10]
+    top_tiendas = sorted(por_tienda.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:5]
+
+    encabezado = (
+        f"Proveedor {proveedor_id}: ${total_neta:,.0f} venta neta, "
+        f"{total_unidades} unidades, ${total_costo:,.0f} costo, "
+        f"{total_inv} en inventario, {len(por_producto)} productos en {len(por_tienda)} tiendas."
+    )
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps({
+            "proveedor_id": proveedor_id,
+            "periodo": f"{fecha_inicio} a {fecha_fin}",
+            "total_venta_neta": round(total_neta, 2),
+            "total_unidades": total_unidades,
+            "total_costo_venta": round(total_costo, 2),
+            "total_inventario": total_inv,
+            "total_productos": len(por_producto),
+            "total_tiendas": len(por_tienda),
+            "top_productos": [{"producto": n, "unidades": d["unidades"], "venta_neta": round(d["venta_neta"], 2), "costo": round(d["costo"], 2), "inventario": d["inventario"]} for n, d in top_productos],
+            "top_tiendas": [{"tienda": n, "unidades": d["unidades"], "venta_neta": round(d["venta_neta"], 2), "costo": round(d["costo"], 2)} for n, d in top_tiendas],
+        }, ensure_ascii=False)}
+    ]}
 
 def productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
     """Productos con stock que no han vendido recientemente."""
