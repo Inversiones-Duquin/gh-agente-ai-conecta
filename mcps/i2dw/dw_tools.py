@@ -49,7 +49,10 @@ def dw_validate_token() -> dict:
 
 @tool
 def dw_get_centros_all() -> dict:
-    """Lista centros de operacion con id_co y nombre. Usar para resolver nombres de tiendas."""
+    """[SOLO PARA CONSULTAS ADMINISTRATIVAS] Lista centros de operacion con id_co y nombre.
+    NO necesitas llamar esta herramienta antes de dw_resumen_ventas, dw_centros_por_venta
+    o dw_comparar_ventas — esas herramientas YA devuelven nombres o IDs de centros.
+    Solo usa esto si el usuario pregunta explicitamente 'que tiendas tenemos?' o 'dame el listado de sedes'."""
     return _get_centros_all()
 
 @tool
@@ -134,10 +137,11 @@ def dw_get_criterios_producto(id_item: int) -> dict:
     return _get_criterios_producto(id_item)
 
 @tool
-def dw_obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: Optional[str] = None,
+def dw_obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
                                     proveedor_id: Optional[str] = None) -> dict:
-    """Reporte ventas/inventario/costo x proveedor (plan 007). ATENCION: mensaje/datos, NO status/data. Si usuario menciona proveedor, USA ESTA HERRAMIENTA."""
-    return _obtener_reporte_proveedores(fecha_inicio, fecha_fin, proveedor_id)
+    """Reporte completo de proveedor: venta neta, unidades, costo, inventario por producto, tienda y categoria.
+    USA para 'como va el proveedor X?', 'informe de HACEB', 'reporte del proveedor 0444'."""
+    return _obtener_reporte_proveedores(fecha_desde, fecha_hasta, proveedor_id)
 
 
 # -- Nuevas herramientas de analisis avanzado --
@@ -198,10 +202,10 @@ def dw_productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Opt
     return _productos_estancados(proveedor_id, fecha_corte)
 
 @tool
-def dw_reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
+def dw_reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
                                proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
     """Top productos de un proveedor especifico."""
-    return _reporte_proveedor_top(limite, fecha_inicio, fecha_fin, proveedor_id, ordenar_por)
+    return _reporte_proveedor_top(limite, fecha_desde, fecha_hasta, proveedor_id, ordenar_por)
 
 
 @tool

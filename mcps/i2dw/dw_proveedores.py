@@ -10,13 +10,13 @@ _index_cache: Optional[dict] = None
 _index_ts: float = 0.0
 
 
-def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: Optional[str] = None,
+def obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
                                 proveedor_id: Optional[str] = None) -> dict:
     """Reporte del proveedor con totales agregados del periodo."""
     import json as _json
 
     result = call_api("GET", "/ventas-proveedores/", {
-        "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
+        "fecha_inicio": fecha_desde, "fecha_fin": fecha_hasta,
         "proveedor_id": proveedor_id
     }, timeout=REQUEST_TIMEOUT_SLOW)
 
@@ -41,12 +41,14 @@ def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: O
     total_costo = sum(float(f.get("coste_venta", 0) or 0) for f in filas)
     total_inv = sum(int(f.get("cantidad_inventario", 0) or 0) for f in filas)
 
-    # Agrupar por producto y por tienda
+    # Agrupar por producto, tienda y categoria
     por_producto = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0, "inventario": 0})
     por_tienda = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+    por_categoria = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
     for f in filas:
         nombre = f.get("descripcion_articulo", "")
         tienda = f.get("punto_de_venta", "")
+        cat = f.get("categoria", "")
         unds = int(f.get("cantidad_vendida", 0) or 0)
         neto = float(f.get("venta_neta", 0) or 0)
         costo = float(f.get("coste_venta", 0) or 0)
@@ -58,9 +60,14 @@ def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: O
         por_tienda[tienda]["unidades"] += unds
         por_tienda[tienda]["venta_neta"] += neto
         por_tienda[tienda]["costo"] += costo
+        if cat:
+            por_categoria[cat]["unidades"] += unds
+            por_categoria[cat]["venta_neta"] += neto
+            por_categoria[cat]["costo"] += costo
 
     top_productos = sorted(por_producto.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:10]
     top_tiendas = sorted(por_tienda.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:5]
+    top_categorias = sorted(por_categoria.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:10]
 
     encabezado = (
         f"Proveedor {proveedor_id}: ${total_neta:,.0f} venta neta, "
@@ -72,7 +79,7 @@ def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: O
         {"text": encabezado},
         {"text": _json.dumps({
             "proveedor_id": proveedor_id,
-            "periodo": f"{fecha_inicio} a {fecha_fin}",
+            "periodo": f"{fecha_desde} a {fecha_hasta}",
             "total_venta_neta": round(total_neta, 2),
             "total_unidades": total_unidades,
             "total_costo_venta": round(total_costo, 2),
@@ -81,6 +88,7 @@ def obtener_reporte_proveedores(fecha_inicio: Optional[str] = None, fecha_fin: O
             "total_tiendas": len(por_tienda),
             "top_productos": [{"producto": n, "unidades": d["unidades"], "venta_neta": round(d["venta_neta"], 2), "costo": round(d["costo"], 2), "inventario": d["inventario"]} for n, d in top_productos],
             "top_tiendas": [{"tienda": n, "unidades": d["unidades"], "venta_neta": round(d["venta_neta"], 2), "costo": round(d["costo"], 2)} for n, d in top_tiendas],
+            "por_categoria": [{"categoria": n, "unidades": d["unidades"], "venta_neta": round(d["venta_neta"], 2), "costo": round(d["costo"], 2)} for n, d in top_categorias],
         }, ensure_ascii=False)}
     ]}
 
@@ -89,11 +97,11 @@ def productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Option
     return call_api("GET", "/ventas-proveedores/venta-cero",
                     {"fecha_fin": fecha_corte, "proveedor_id": proveedor_id})
 
-def reporte_proveedor_top(limite: int, fecha_inicio: str, fecha_fin: str,
+def reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
                            proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
     """Top productos de un proveedor."""
-    return call_api("GET", "/ventas-proveedores/", {"top": limite, "fecha_inicio": fecha_inicio,
-                    "fecha_fin": fecha_fin, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por},
+    return call_api("GET", "/ventas-proveedores/", {"top": limite, "fecha_inicio": fecha_desde,
+                    "fecha_fin": fecha_hasta, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 def listar_proveedores() -> dict:
