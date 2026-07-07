@@ -76,8 +76,8 @@ def dw_get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = Non
 def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """Total de ventas corporativo. Usa ESTA herramienta para: 'cuanto vendimos?', 'como cerro el mes?',
     'ventas totales de julio?', 'cuanto facturamos ayer?', 'como vamos hoy?'.
-    Retorna total_neto, total_costo, total_margen, margen_porcentual, total_descuento, total_impuesto.
-    NO uses esta para rankings de tiendas — para eso usa dw_ventas_por_dimension."""
+    Retorna total_neto, total_costo, total_margen, margen_porcentual.
+    IMPORTANTE: el margen y margen_porcentual ya vienen calculados. NO los recalcules."""
     return _resumen_ventas(fecha_desde, fecha_hasta, id_co)
 
 
@@ -172,11 +172,10 @@ def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
 
 @tool
 def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
-                      id_co: Optional[int] = None, ordenar_por: str = "cantidad") -> dict:
-    """[HERRAMIENTA PRINCIPAL PARA RANKINGS DE PRODUCTOS] Top N productos por ventas en un periodo.
-    USA ESTA para: 'top 20 productos mas vendidos', 'productos estrella del mes',
-    'ranking de productos', 'los mas vendidos', 'que productos lideran ventas?'.
-    NUNCA uses dw_get_productos_all ni dw_get_productos_paginated para rankings — son catalogo, no ventas."""
+                      id_co: Optional[int] = None, ordenar_por: str = "venta_neta") -> dict:
+    """[RANKINGS DE PRODUCTOS] Top N productos mas vendidos en un periodo.
+    ordenar_por: 'venta_neta' (default), 'cantidad' o 'costo'.
+    USA para: 'top 10 productos', 'los mas vendidos del mes', 'ranking de productos'."""
     return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
 
 @tool
@@ -184,14 +183,12 @@ def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None, limit: int = 20,
                               orden: str = "desc", ordenar_por: str = "neto") -> dict:
     """[HERRAMIENTA UNIFICADA DE ANALISIS] Ventas agrupadas por cualquier dimension.
-    dimension: 'categoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
+    dimension: 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
     ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
     orden: 'desc' (top) o 'asc' (bottom)
-    Ejemplos:
-    - 'categoria mas rentable?' -> dimension='categoria', ordenar_por='margen', limit=1
-    - 'tiendas que menos venden?' -> dimension='co', orden='asc'
-    - 'top 5 marcas?' -> dimension='marca', limit=5
-    - 'mejor seccion?' -> dimension='seccion', ordenar_por='neto', limit=1"""
+    IMPORTANTE: la API ya calcula margen y margen_porcentaje. USA los valores tal cual vienen.
+    NO recalcules margen ni porcentajes. Confia en los campos 'margen' y 'margen_porcentaje'.
+    Ej: 'categoria mas rentable?' -> dimension='categoria', ordenar_por='margen', limit=1"""
     return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por)
 
 @tool

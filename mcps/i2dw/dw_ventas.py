@@ -460,7 +460,7 @@ def ventas_por_dimension(dimension: str,
                          orden: str = "desc",
                          ordenar_por: str = "neto") -> dict:
     """Ventas agrupadas por dimension. Una sola llamada, resultado directo.
-    dimension: 'categoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
+    dimension: 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
     orden: 'asc' (menor primero) o 'desc' (mayor primero)
     ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
     Ej: categoria mas rentable -> dimension='categoria', ordenar_por='margen'
