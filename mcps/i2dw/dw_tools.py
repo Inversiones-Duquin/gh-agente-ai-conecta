@@ -13,7 +13,7 @@ from i2dw.dw_ventas import (
     top_productos as _top_productos, ventas_por_dimension as _ventas_por_dimension,
     ventas_por_medio_pago as _ventas_por_medio_pago,
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
-    rotacion_inventario as _rotacion_inventario, resumen_ventas as _resumen_ventas,
+    rotacion_inventario as _rotacion_inventario,
     comparar_ventas as _comparar_ventas,
     producto_mas_vendido as _producto_mas_vendido,
     comparar_productos as _comparar_productos,
@@ -49,7 +49,7 @@ def dw_validate_token() -> dict:
 @tool
 def dw_get_centros_all() -> dict:
     """[SOLO PARA CONSULTAS ADMINISTRATIVAS] Lista centros de operacion con id_co y nombre.
-    NO necesitas llamar esta herramienta antes de dw_resumen_ventas, dw_ventas_por_dimension
+    NO necesitas llamar esta herramienta antes de dw_ventas_por_dimension, dw_ventas_por_dimension
     o dw_comparar_ventas — esas herramientas YA devuelven nombres o IDs de centros.
     Solo usa esto si el usuario pregunta explicitamente 'que tiendas tenemos?' o 'dame el listado de sedes'."""
     return _get_centros_all()
@@ -67,18 +67,9 @@ def dw_buscar_proveedor_por_nombre(nombre: str) -> dict:
 @tool
 def dw_get_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
     """[USO RESTRINGIDO] Datos diarios crudos de ventas. SOLO para analisis detallados dia a dia.
-    Para totales usa dw_resumen_ventas. Para rankings de tiendas usa dw_ventas_por_dimension.
+    Para totales usa dw_ventas_por_dimension. Para rankings de tiendas usa dw_ventas_por_dimension.
     Para comparar periodos usa dw_comparar_ventas. NO uses esta para 'cuanto vendimos' o rankings."""
     return _get_ventas(fecha_desde, fecha_hasta, id_co)
-
-
-@tool
-def dw_resumen_ventas(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
-    """Total de ventas corporativo. Usa ESTA herramienta para: 'cuanto vendimos?', 'como cerro el mes?',
-    'ventas totales de julio?', 'cuanto facturamos ayer?', 'como vamos hoy?'.
-    Retorna total_neto, total_costo, total_margen, margen_porcentual.
-    IMPORTANTE: el margen y margen_porcentual ya vienen calculados. NO los recalcules."""
-    return _resumen_ventas(fecha_desde, fecha_hasta, id_co)
 
 
 @tool
@@ -182,13 +173,14 @@ def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
 def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None, limit: int = 20,
                               orden: str = "desc", ordenar_por: str = "neto") -> dict:
-    """[HERRAMIENTA UNIFICADA DE ANALISIS] Ventas agrupadas por cualquier dimension.
-    dimension: 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
-    ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
-    orden: 'desc' (top) o 'asc' (bottom)
-    IMPORTANTE: la API ya calcula margen y margen_porcentaje. USA los valores tal cual vienen.
-    NO recalcules margen ni porcentajes. Confia en los campos 'margen' y 'margen_porcentaje'.
-    Ej: 'categoria mas rentable?' -> dimension='categoria', ordenar_por='margen', limit=1"""
+    """[HERRAMIENTA UNICA — USA PARA TODO] Ventas agrupadas.
+    dimension = QUE agrupar: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto'
+    ordenar_por = COMO ordenar: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
+    orden = 'desc' (top) o 'asc' (bottom)
+    ATENCION: dimension NUNCA es 'margen'. 'margen' es ordenar_por.
+    Ej: margen por tienda -> dimension='co', ordenar_por='margen'
+    Ej: tiendas que mas venden -> dimension='co', ordenar_por='neto'
+    Ej: categoria mas rentable -> dimension='categoria', ordenar_por='margen', limit=1"""
     return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por)
 
 @tool
@@ -246,7 +238,7 @@ DW_TOOLS = [
     dw_health_check, dw_health_db, dw_validate_token,
     dw_get_centros_all,
     dw_listar_proveedores, dw_buscar_proveedor_por_nombre,
-    dw_get_ventas, dw_resumen_ventas, dw_comparar_ventas,
+    dw_get_ventas, dw_comparar_ventas,
     dw_get_ventas_item, dw_get_ventas_clientes, dw_ventas_por_medio_pago,
     dw_get_productos_paginated, dw_get_productos_all, dw_buscar_productos, dw_get_criterios_producto,
     dw_obtener_reporte_proveedores,

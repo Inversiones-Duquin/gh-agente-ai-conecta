@@ -101,9 +101,14 @@ def resumen_ventas(fecha_desde: str,
         if co:
             centros.add(co)
 
-    # Calcular margen porcentual
-    margen_pct = round(
-        (total_margen / total_neto * 100), 2) if total_neto > 0 else 0
+    # Usar margen_porcentaje del API si hay una sola fila, sino calcular correctamente
+    # Formula correcta: margen / subtotal, donde subtotal = neto - impuesto
+    subtotal = total_neto - total_impuesto
+    if len(centros) == 1 and ventas:
+        margen_pct = ventas[0].get("margen_porcentaje", 0)
+    else:
+        margen_pct = round(
+            (total_margen / subtotal * 100), 2) if subtotal > 0 else 0
 
     resumen = {
         "periodo": f"{fecha_desde} a {fecha_hasta}",
@@ -459,23 +464,60 @@ def ventas_por_dimension(dimension: str,
                          limit: int = 20,
                          orden: str = "desc",
                          ordenar_por: str = "neto") -> dict:
-    """Ventas agrupadas por dimension. Una sola llamada, resultado directo.
-    dimension: 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'co'
-    orden: 'asc' (menor primero) o 'desc' (mayor primero)
-    ordenar_por: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
-    Ej: categoria mas rentable -> dimension='categoria', ordenar_por='margen'
-        tiendas que menos venden -> dimension='co', orden='asc'"""
-    return call_api("GET",
-                    "/ventas/", {
-                        "agrupar_por": dimension,
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "id_co": id_co,
-                        "limit": limit,
-                        "orden": orden,
-                        "ordenar_por_agrupado": ordenar_por,
-                    },
-                    timeout=REQUEST_TIMEOUT_SLOW)
+    """Ventas agrupadas por dimension. Procesa la respuesta para que el LLM lea valores correctos."""
+    import json as _json
+
+    result = call_api("GET",
+                      "/ventas/", {
+                          "agrupar_por": dimension,
+                          "fecha_desde": fecha_desde,
+                          "fecha_hasta": fecha_hasta,
+                          "id_co": id_co,
+                          "limit": limit,
+                          "orden": orden,
+                          "ordenar_por_agrupado": ordenar_por,
+                      },
+                      timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "[]")
+    try:
+        data = _json.loads(raw)
+        filas = data if isinstance(data, list) else data.get("data", data.get("items", []))
+    except (_json.JSONDecodeError, TypeError):
+        filas = []
+
+    if not filas:
+        return {"status": "success", "content": [
+            {"text": f"Sin datos para {dimension} en {fecha_desde} a {fecha_hasta}."}
+        ]}
+
+    # Construir respuesta SIN neto ni costo — solo margen y margen_porcentaje del API
+    # Asi el LLM no puede recalcular formulas incorrectas
+    items = []
+    for f in filas[:limit]:
+        nombre = f.get("grupo", f.get("id_grupo", ""))
+        items.append({
+            "nombre": nombre,
+            "venta_neta": f.get("neto", 0),
+            "margen": f.get("margen", 0),
+            "margen_porcentaje": f.get("margen_porcentaje", 0),
+            "unidades": int(f.get("cant_vendida", 0) or 0),
+        })
+
+    encabezado = f"Resultados para {dimension} ({fecha_desde} a {fecha_hasta}). "
+    encabezado += "El margen_porcentaje ya viene calculado por la API. USA ESE valor."
+    for i, item in enumerate(items, 1):
+        encabezado += (
+            f" | {i}. {item['nombre']}: "
+            f"venta_neta=${item['venta_neta']:,.0f}, "
+            f"margen=${item['margen']:,.0f} "
+            f"({item['margen_porcentaje']}%)"
+        )
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps(items, ensure_ascii=False)}
+    ]}
 
 
 def ventas_por_medio_pago(fecha_desde: str,
