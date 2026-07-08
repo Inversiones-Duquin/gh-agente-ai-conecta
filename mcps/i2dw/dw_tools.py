@@ -84,8 +84,10 @@ def dw_comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
 
 @tool
 def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
-    """Ventas x producto con cliente y documento (CREDITO/POS/CONSUMIDOR FINAL)."""
-    return _get_ventas_item(id_co, id_item, fecha_desde, fecha_hasta)
+    """[RESTRINGIDA] Ventas de UN producto por ID numerico. Solo si YA conoces el id_item exacto.
+    Parametros: id_item (int, obligatorio), fecha_desde, fecha_hasta, id_co (int, opcional).
+    NO pasar fechas en id_item ni id_co. Si no sabes el id_item, usa dw_buscar_ventas."""
+    return _get_ventas_item(id_item, fecha_desde, fecha_hasta, id_co)
 
 @tool
 def dw_get_ventas_clientes(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None,
