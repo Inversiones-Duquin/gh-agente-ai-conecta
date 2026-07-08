@@ -325,28 +325,42 @@ def comparar_ventas(fecha_desde_1: str,
 def get_ventas_item(id_item: int,
                     fecha_desde: str,
                     fecha_hasta: str,
-                    id_co: Optional[int] = None) -> dict:
-    """Ventas x producto con cliente y documento."""
+                    id_co: Optional[int] = None,
+                    agrupar_por: str = "documento",
+                    orden: str = "desc",
+                    ordenar_por: str = "neto") -> dict:
+    """Ventas detalladas de un item. agrupar_por: 'documento', 'co' o 'cliente'.
+    Incluye margen, margen_porcentaje y cantidad_inventario (si agrupa por co)."""
     return call_api(
         "GET", "/ventas/item", {
             "id_co": id_co,
             "id_item": id_item,
             "fecha_desde": fecha_desde,
-            "fecha_hasta": fecha_hasta
+            "fecha_hasta": fecha_hasta,
+            "agrupar_por": agrupar_por,
+            "orden": orden,
+            "ordenar_por": ordenar_por,
         })
 
 
 def get_ventas_clientes(fecha_desde: str,
                         fecha_hasta: str,
                         id_co: Optional[int] = None,
-                        id_cliente: Optional[int] = None) -> dict:
-    """Ventas agrupadas x cliente."""
+                        id_cliente: Optional[int] = None,
+                        agrupar_por: str = "cliente",
+                        orden: str = "desc",
+                        ordenar_por: str = "neto") -> dict:
+    """Ventas agrupadas por cliente o centro. agrupar_por: 'cliente' o 'co'.
+    Incluye nombre_co, margen y margen_porcentaje."""
     return call_api(
         "GET", "/ventas/clientes", {
             "fecha_desde": fecha_desde,
             "fecha_hasta": fecha_hasta,
             "id_co": id_co,
-            "id_cliente": id_cliente
+            "id_cliente": id_cliente,
+            "agrupar_por": agrupar_por,
+            "orden": orden,
+            "ordenar_por": ordenar_por,
         })
 
 

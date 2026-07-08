@@ -83,17 +83,31 @@ def dw_comparar_ventas(fecha_desde_1: str, fecha_hasta_1: str,
     return _comparar_ventas(fecha_desde_1, fecha_hasta_1, fecha_desde_2, fecha_hasta_2, id_co)
 
 @tool
-def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
-    """[RESTRINGIDA] Ventas de UN producto por ID numerico. Solo si YA conoces el id_item exacto.
-    Parametros: id_item (int, obligatorio), fecha_desde, fecha_hasta, id_co (int, opcional).
-    NO pasar fechas en id_item ni id_co. Si no sabes el id_item, usa dw_buscar_ventas."""
-    return _get_ventas_item(id_item, fecha_desde, fecha_hasta, id_co)
+def dw_get_ventas_item(id_item: int, fecha_desde: str, fecha_hasta: str,
+                        id_co: Optional[int] = None,
+                        agrupar_por: str = "documento",
+                        orden: str = "desc",
+                        ordenar_por: str = "neto") -> dict:
+    """[VENTAS DE UN PRODUCTO POR ID] Detalle de ventas de un item.
+    id_item: ID numerico del producto (obligatorio).
+    agrupar_por: 'documento' (detalle), 'co' (por tienda, incluye inventario) o 'cliente'.
+    ordenar_por: 'neto', 'cantidad' o 'fecha'. orden: 'asc' o 'desc'.
+    Incluye margen, margen_porcentaje y nombre_co. Si no sabes el id_item, usa dw_buscar_ventas."""
+    return _get_ventas_item(id_item, fecha_desde, fecha_hasta, id_co,
+                            agrupar_por, orden, ordenar_por)
 
 @tool
-def dw_get_ventas_clientes(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None,
-                           id_cliente: Optional[int] = None) -> dict:
-    """Ventas agrupadas x cliente. Fechas requeridas, id_co e id_cliente opcionales."""
-    return _get_ventas_clientes(fecha_desde, fecha_hasta, id_co, id_cliente)
+def dw_get_ventas_clientes(fecha_desde: str, fecha_hasta: str,
+                            id_co: Optional[int] = None,
+                            id_cliente: Optional[int] = None,
+                            agrupar_por: str = "cliente",
+                            orden: str = "desc",
+                            ordenar_por: str = "neto") -> dict:
+    """Ventas por cliente o por centro.
+    agrupar_por: 'cliente' (default) o 'co' (ranking de clientes por tienda).
+    ordenar_por: 'neto', 'cantidad' o 'margen'. Incluye nombre_co, margen y margen_porcentaje."""
+    return _get_ventas_clientes(fecha_desde, fecha_hasta, id_co, id_cliente,
+                                agrupar_por, orden, ordenar_por)
 
 @tool
 def dw_ventas_por_medio_pago(fecha_desde: str, fecha_hasta: str,
