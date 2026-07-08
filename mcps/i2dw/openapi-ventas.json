@@ -1,53 +1,300 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "i2d_dw - Ventas",
-    "description": "Endpoints de ventas del Data Warehouse i2d_dw. Multiples modos: resumen, busqueda, ranking, margen, comparativa, ticket, rotacion.",
-    "version": "2.1.0"
+    "title": "i2d_dw - API de Ventas",
+    "description": "Endpoints de ventas del Data Warehouse i2d_dw. Multiples modos via query params: resumen, busqueda, ranking, margen por dimension, comparativa inter-periodo, ticket promedio, rotacion de inventario, y ventas por medio de pago.",
+    "version": "2.2.0"
   },
-  "servers": [{"url": "https://api.inversionesduquin.online", "description": "API i2d_dw - Produccion"}],
+  "servers": [
+    {
+      "url": "https://api.inversionesduquin.online",
+      "description": "Produccion"
+    }
+  ],
   "paths": {
     "/api/v2/ventas/": {
       "get": {
         "tags": ["ventas"],
-        "summary": "Ventas - multi-modo",
-        "description": "Endpoint multi-modo. Modos: resumen (id_co+fechas), busqueda (q), ranking (top), margen (agrupar_por), comparativa (comparar_con), ticket (modo=ticket), rotacion (modo=rotacion).",
+        "summary": "Ventas — multi-modo",
+        "description": "Endpoint unico para todas las consultas de ventas. El modo se detecta segun los query params enviados. Todos los modos usan la tabla de detalle (t_detalles_documentos_ventas) directamente, sin duplicacion de valores del header.",
         "operationId": "get_ventas",
         "parameters": [
-          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "ID del centro de operaciones"},
-          {"name": "fecha_desde", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio YYYY-MM-DD"},
-          {"name": "fecha_hasta", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha fin YYYY-MM-DD"},
-          {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Busqueda por nombre, referencia o ID de producto"},
-          {"name": "referencia", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Busqueda por referencia de producto"},
-          {"name": "top", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Ranking: cantidad de productos a retornar"},
-          {"name": "ordenar_por", "in": "query", "required": false, "schema": {"type": "string", "enum": ["cantidad", "costo"]}, "description": "Criterio de orden para ranking"},
-          {"name": "agrupar_por", "in": "query", "required": false, "schema": {"type": "string", "enum": ["producto", "categoria", "seccion", "proveedor"]}, "description": "Agrupar margen por dimension"},
-          {"name": "comparar_con", "in": "query", "required": false, "schema": {"type": "string", "format": "date"}, "description": "Fecha inicio del periodo anterior para comparativa"},
-          {"name": "modo", "in": "query", "required": false, "schema": {"type": "string", "enum": ["ticket", "rotacion"]}, "description": "Modo especial: ticket o rotacion"},
-          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Maximo de resultados. Default: 100"}
+          {
+            "name": "id_co",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" },
+            "description": "Filtro por centro de operacion (opcional en todos los modos)"
+          },
+          {
+            "name": "fecha_desde",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date" },
+            "description": "Fecha inicio YYYY-MM-DD"
+          },
+          {
+            "name": "fecha_hasta",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date" },
+            "description": "Fecha fin YYYY-MM-DD"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Busqueda elastica por nombre, referencia o ID de producto (word-by-word, case-insensitive)"
+          },
+          {
+            "name": "referencia",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Busqueda por referencia de producto (LIKE parcial)"
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "description": "Ranking: top N productos mas vendidos"
+          },
+          {
+            "name": "ordenar_por",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cantidad",
+                "costo",
+                "venta_costo",
+                "venta_neta",
+                "venta_bruta"
+              ]
+            },
+            "description": "Criterio de orden para top/ranking. Default: 'cantidad'"
+          },
+          {
+            "name": "agrupar_por",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "producto",
+                "categoria",
+                "seccion",
+                "proveedor",
+                "marca",
+                "subcategoria",
+                "co"
+              ]
+            },
+            "description": "Agrupa ventas con margen por dimension. 'co' usa solo la tabla header para precision absoluta de neto."
+          },
+          {
+            "name": "ordenar_por_agrupado",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["neto", "margen", "margen_porcentaje", "cantidad"]
+            },
+            "description": "Columna de orden para modo agrupado. Default: 'neto'"
+          },
+          {
+            "name": "orden",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["asc", "desc"] },
+            "description": "Direccion del orden. Default: 'desc'"
+          },
+          {
+            "name": "comparar_con",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date" },
+            "description": "Fecha inicio del periodo anterior para comparativa. La duracion se calcula automaticamente."
+          },
+          {
+            "name": "modo",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["ticket", "rotacion"] },
+            "description": "Modo especial: 'ticket' (promedio por factura) o 'rotacion' (dias de inventario)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500 },
+            "description": "Maximo de resultados. Default: 100"
+          }
         ],
         "responses": {
-          "200": {"description": "Datos de ventas segun el modo"},
-          "400": {"description": "Parametros invalidos", "content": {"application/json": {"schema": {"type": "object", "properties": {"detail": {"type": "string"}}}}}},
-          "401": {"description": "Token invalido"},
-          "403": {"description": "Sin permiso RBAC"}
+          "200": {
+            "description": "Datos de ventas. El esquema de 'data' varia segun el modo."
+          },
+          "400": { "description": "Parametros invalidos" },
+          "401": { "description": "Token no proporcionado o invalido" },
+          "403": { "description": "Sin permiso RBAC para este recurso" }
         }
       }
     },
-    "/api/v2/ventas/item": {
+    "/api/v2/ventas/productos": {
       "get": {
         "tags": ["ventas"],
-        "summary": "Ventas desglosadas por producto",
-        "operationId": "get_ventas_item",
+        "summary": "Ventas con clasificacion completa (seccion, categoria, proveedor)",
+        "description": "Reemplaza a /ventas/item. Agrupado por producto y punto de venta. Incluye seccion, categoria, proveedor y venta_neta prorrateada. Filtrable por item, q (busqueda por nombre), referencia, categoria, seccion, proveedor_id. Acepta comparar_con para comparativa inter-periodo.",
+        "operationId": "get_ventas_productos",
         "parameters": [
-          {"name": "id_co", "in": "query", "required": true, "schema": {"type": "integer"}},
-          {"name": "id_item", "in": "query", "required": true, "schema": {"type": "integer"}},
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}}
+          {
+            "name": "fecha_desde",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "fecha_hasta",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "id_co",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "id_item",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtrar por ID exacto de producto"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Buscar productos cuyo nombre o referencia contenga este texto. Una sola llamada, sin two-step."
+          },
+          {
+            "name": "referencia",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtrar por referencia exacta de producto"
+          },
+          {
+            "name": "categoria",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtrar por categoria exacta (plan 004). Ej: 'NEVERAS'"
+          },
+          {
+            "name": "seccion",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtrar por seccion exacta (plan 003). Ej: 'ELECTRODOMESTICOS'"
+          },
+          {
+            "name": "proveedor_id",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtrar por ID de proveedor (plan 007). Ej: '0444'"
+          },
+          {
+            "name": "ordenar_por",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["venta_neta", "cantidad", "costo"]
+            },
+            "description": "Default: 'venta_neta'"
+          },
+          {
+            "name": "comparar_con",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date" },
+            "description": "Comparativa: fecha inicio del periodo anterior"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500 },
+            "description": "Default: 100"
+          }
         ],
         "responses": {
-          "200": {"description": "Detalle de ventas del producto"},
-          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
+          "200": {
+            "description": "Ventas con clasificacion. Si comparar_con, retorna {periodo_actual, periodo_anterior}."
+          },
+          "400": { "description": "Parametros invalidos" },
+          "401": { "description": "Token invalido" },
+          "403": { "description": "Sin permiso" }
+        }
+      }
+    },
+    "/api/v2/ventas/mpagos": {
+      "get": {
+        "tags": ["ventas"],
+        "summary": "Ventas agregadas por medio de pago con margen",
+        "description": "Agrupado por medio de pago con neto, costo, margen y margen_porcentaje. Ordenable.",
+        "operationId": "get_ventas_mpagos",
+        "parameters": [
+          {
+            "name": "fecha_desde",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "fecha_hasta",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "id_co",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "orden",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["asc", "desc"] },
+            "description": "Default: 'desc'"
+          },
+          {
+            "name": "ordenar_por",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["neto", "cantidad", "costo"]
+            },
+            "description": "Default: 'neto'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array de medios de pago con venta_neta, venta_costo, margen, margen_porcentaje"
+          },
+          "401": { "description": "Token invalido" },
+          "403": { "description": "Sin permiso" }
         }
       }
     },
@@ -57,30 +304,72 @@
         "summary": "Ventas agrupadas por cliente",
         "operationId": "get_ventas_clientes",
         "parameters": [
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
-          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}},
-          {"name": "id_cliente", "in": "query", "required": false, "schema": {"type": "integer"}}
+          {
+            "name": "fecha_desde",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "fecha_hasta",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "id_co",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "id_cliente",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
         ],
         "responses": {
-          "200": {"description": "Ventas por cliente"},
-          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
+          "200": { "description": "Ventas por cliente" },
+          "401": { "description": "Token invalido" },
+          "403": { "description": "Sin permiso" }
         }
       }
     },
-    "/api/v2/ventas/mpagos": {
+    "/api/v2/ventas/item": {
       "get": {
         "tags": ["ventas"],
-        "summary": "Ventas desglosadas por medio de pago",
-        "operationId": "get_ventas_mpagos",
+        "summary": "[DEPRECATED] Ventas desglosadas por producto. Usar /ventas/productos.",
+        "operationId": "get_ventas_item",
+        "deprecated": true,
         "parameters": [
-          {"name": "fecha_desde", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
-          {"name": "fecha_hasta", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}},
-          {"name": "id_co", "in": "query", "required": false, "schema": {"type": "integer"}}
+          {
+            "name": "id_co",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "id_item",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "fecha_desde",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "fecha_hasta",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" }
+          }
         ],
         "responses": {
-          "200": {"description": "Ventas por medio de pago"},
-          "401": {"description": "Token invalido"}, "403": {"description": "Sin permiso"}
+          "200": { "description": "Detalle de ventas del producto" }
         }
       }
     }
