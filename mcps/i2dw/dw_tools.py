@@ -190,7 +190,7 @@ def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None, limit: int = 20,
                               orden: str = "desc", ordenar_por: str = "neto") -> dict:
     """[HERRAMIENTA UNICA — USA PARA TODO] Ventas agrupadas.
-    dimension = QUE agrupar: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto'
+    dimension = QUE agrupar: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'ciudad'
     ordenar_por = COMO ordenar: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
     orden = 'desc' (top) o 'asc' (bottom)
     ATENCION: dimension NUNCA es 'margen'. 'margen' es ordenar_por.
