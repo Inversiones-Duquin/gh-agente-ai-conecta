@@ -505,27 +505,33 @@ def ventas_por_dimension(dimension: str,
             {"text": f"Sin datos para {dimension} en {fecha_desde} a {fecha_hasta}."}
         ]}
 
-    # Construir respuesta SIN neto ni costo — solo margen y margen_porcentaje del API
-    # Asi el LLM no puede recalcular formulas incorrectas
+    # Formatear en millones para que Nova Lite no altere los numeros grandes
     items = []
     for f in filas[:limit]:
         nombre = f.get("grupo", f.get("id_grupo", ""))
+        neto = f.get("neto", 0)
+        margen = f.get("margen", 0)
+        m_pct = f.get("margen_porcentaje", 0)
+        unds = int(f.get("cant_vendida", 0) or 0)
+        neto_m = neto / 1_000_000
+        margen_m = margen / 1_000_000
         items.append({
             "nombre": nombre,
-            "venta_neta": f.get("neto", 0),
-            "margen": f.get("margen", 0),
-            "margen_porcentaje": f.get("margen_porcentaje", 0),
-            "unidades": int(f.get("cant_vendida", 0) or 0),
+            "venta_neta_M": round(neto_m, 1),
+            "margen_M": round(margen_m, 1),
+            "margen_porcentaje": m_pct,
+            "unidades": unds,
         })
 
     encabezado = f"Resultados para {dimension} ({fecha_desde} a {fecha_hasta}). "
-    encabezado += "El margen_porcentaje ya viene calculado por la API. USA ESE valor."
+    encabezado += "Valores en millones (M). Margen_porcentaje YA calculado. USA estos valores exactos."
     for i, item in enumerate(items, 1):
         encabezado += (
             f" | {i}. {item['nombre']}: "
-            f"venta_neta=${item['venta_neta']:,.0f}, "
-            f"margen=${item['margen']:,.0f} "
-            f"({item['margen_porcentaje']}%)"
+            f"venta_neta=${item['venta_neta_M']}M, "
+            f"margen=${item['margen_M']}M "
+            f"({item['margen_porcentaje']}%), "
+            f"{item['unidades']} und"
         )
 
     return {"status": "success", "content": [
