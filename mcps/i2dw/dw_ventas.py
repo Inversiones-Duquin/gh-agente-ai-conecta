@@ -588,14 +588,14 @@ def ticket_promedio(fecha_desde: str,
 def rotacion_inventario(fecha_desde: str,
                         fecha_hasta: str,
                         id_co: Optional[int] = None,
-                        limite: int = 50) -> dict:
-    """Dias de inventario por producto."""
+                        limite: int = 20) -> dict:
+    """Ranking de productos por unidades vendidas (rotacion = cantidad)."""
     return call_api("GET",
-                    "/ventas/", {
-                        "modo": "rotacion",
+                    "/ventas/productos", {
                         "fecha_desde": fecha_desde,
                         "fecha_hasta": fecha_hasta,
                         "id_co": id_co,
+                        "ordenar_por": "cantidad",
                         "limit": limite
                     },
                     timeout=REQUEST_TIMEOUT_SLOW)

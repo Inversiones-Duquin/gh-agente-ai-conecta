@@ -211,8 +211,12 @@ def dw_ticket_promedio(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] 
 
 @tool
 def dw_rotacion_inventario(fecha_desde: str, fecha_hasta: str,
-                            id_co: Optional[int] = None, limite: int = 50) -> dict:
-    """Dias de inventario por producto. Usar para 'productos con sobrestock', 'baja rotacion'."""
+                            id_co: Optional[int] = None, limite: int = 20) -> dict:
+    """[PRODUCTOS MAS/MENOS ROTADOS] Ranking de productos por unidades vendidas.
+    Rotacion = cantidad de unidades vendidas. Mas rotacion = mas unidades vendidas.
+    USA para: 'productos mas rotados?', 'que productos menos rotan?',
+    'productos con mayor rotacion?', 'cuales tienen baja rotacion?'.
+    orden='desc' = mas rotados, orden='asc' = menos rotados."""
     return _rotacion_inventario(fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
