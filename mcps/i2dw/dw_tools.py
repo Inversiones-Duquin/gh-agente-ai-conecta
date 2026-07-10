@@ -14,6 +14,7 @@ from i2dw.dw_ventas import (
     ventas_por_medio_pago as _ventas_por_medio_pago,
     comparar_periodos as _comparar_periodos, ticket_promedio as _ticket_promedio,
     rotacion_inventario as _rotacion_inventario,
+    inventario_dias as _inventario_dias,
     comparar_ventas as _comparar_ventas,
     producto_mas_vendido as _producto_mas_vendido,
     comparar_productos as _comparar_productos,
@@ -219,6 +220,16 @@ def dw_rotacion_inventario(fecha_desde: str, fecha_hasta: str,
     orden='desc' = mas rotados, orden='asc' = menos rotados."""
     return _rotacion_inventario(fecha_desde, fecha_hasta, id_co, limite)
 
+
+@tool
+def dw_inventario_dias(fecha_desde: str, fecha_hasta: str,
+                        id_co: Optional[int] = None, limite: int = 50) -> dict:
+    """[ROTACION DE INVENTARIO] Dias de inventario por producto. Control financiero.
+    USA para: 'rotacion de inventario', 'dias de inventario', 'productos con sobrestock',
+    'productos que no rotan', 'cuantos dias de stock tengo?'.
+    NO confundir con dw_rotacion_inventario (ranking por unidades vendidas)."""
+    return _inventario_dias(fecha_desde, fecha_hasta, id_co, limite)
+
 @tool
 def dw_productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
     """Productos con stock que no han vendido. Usar para 'productos estancados', 'no se vende'."""
@@ -265,6 +276,7 @@ DW_TOOLS = [
     dw_buscar_ventas, dw_buscar_ventas_por_referencia, dw_top_productos, dw_ventas_por_dimension,
     dw_comparar_periodos, dw_ticket_promedio, dw_rotacion_inventario,
     dw_productos_estancados, dw_reporte_proveedor_top,
+    dw_inventario_dias,
     dw_producto_mas_vendido,
     dw_comparar_productos,
 ]
