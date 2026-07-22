@@ -240,13 +240,19 @@ def search_knowledge_base(query: str) -> dict:
 # =============================================================================
 @tool
 def fecha_actual() -> dict:
-    """Retorna la fecha actual del sistema. Usa esta herramienta para calcular
-    periodos relativos como 'semana pasada', 'este mes', 'ayer', 'ultimos 7 dias', etc.
-    No necesitas argumentos.
-    """
+    """Retorna la fecha actual y periodos pre-calculados. Usa esta herramienta ANTES de cualquier
+    consulta con fechas relativas. Los periodos ya vienen calculados, NO los recalcules."""
     import json
-    from datetime import datetime
+    from datetime import datetime, timedelta
     hoy = datetime.now()
+
+    # Inicio y fin de periodos comunes
+    inicio_mes_actual = hoy.replace(day=1)
+    fin_mes_anterior = inicio_mes_actual - timedelta(days=1)
+    inicio_mes_anterior = fin_mes_anterior.replace(day=1)
+    inicio_semana = hoy - timedelta(days=hoy.weekday())
+    inicio_trimestre = hoy.replace(month=((hoy.month - 1) // 3) * 3 + 1, day=1)
+
     return {
         "status":
         "success",
@@ -254,11 +260,17 @@ def fecha_actual() -> dict:
             "text":
             json.dumps(
                 {
-                    "fecha": hoy.strftime("%Y-%m-%d"),
+                    "hoy": hoy.strftime("%Y-%m-%d"),
                     "dia_semana": hoy.strftime("%A"),
                     "semana": hoy.isocalendar()[1],
-                    "mes": hoy.month,
-                    "ano": hoy.year,
+                    "mes_actual": hoy.month,
+                    "ano_actual": hoy.year,
+                    # Periodos pre-calculados — USA ESTOS, NO los recalcules
+                    "ayer": (hoy - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    "semana_actual": f"{inicio_semana.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
+                    "mes_actual_rango": f"{inicio_mes_actual.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
+                    "mes_pasado": f"{inicio_mes_anterior.strftime('%Y-%m-%d')} a {fin_mes_anterior.strftime('%Y-%m-%d')}",
+                    "trimestre_actual": f"{inicio_trimestre.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
                 },
                 ensure_ascii=False)
         }]

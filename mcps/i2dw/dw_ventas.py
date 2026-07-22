@@ -364,17 +364,6 @@ def get_ventas_clientes(fecha_desde: str,
         })
 
 
-def get_ventas_mpagos(fecha_desde: str,
-                      fecha_hasta: str,
-                      id_co: Optional[int] = None) -> dict:
-    """Ventas x medio de pago."""
-    return call_api("GET", "/ventas/mpagos", {
-        "fecha_desde": fecha_desde,
-        "fecha_hasta": fecha_hasta,
-        "id_co": id_co
-    })
-
-
 # -- Nuevos modos de ventas --
 
 
@@ -441,17 +430,6 @@ def buscar_ventas(producto: str,
         }, ensure_ascii=False)}
     ]}
 
-
-def buscar_ventas_por_referencia(referencia: str,
-                                 fecha_desde: str,
-                                 fecha_hasta: str,
-                                 id_co: Optional[int] = None,
-                                 limite: int = 100) -> dict:
-    """Busca ventas por referencia de producto. Una sola llamada a /ventas/productos?referencia=."""
-    return call_api("GET", "/ventas/productos",
-                    {"referencia": referencia, "fecha_desde": fecha_desde,
-                     "fecha_hasta": fecha_hasta, "id_co": id_co, "limit": limite},
-                    timeout=REQUEST_TIMEOUT_SLOW)
 
 
 def top_productos(limite: int,
@@ -551,19 +529,6 @@ def ventas_por_medio_pago(fecha_desde: str,
                     timeout=REQUEST_TIMEOUT_SLOW)
 
 
-def comparar_periodos(id_co: int, fecha_desde: str, fecha_hasta: str,
-                      comparar_con: str) -> dict:
-    """Compara ventas entre dos periodos."""
-    return call_api("GET",
-                    "/ventas/", {
-                        "id_co": id_co,
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "comparar_con": comparar_con
-                    },
-                    timeout=REQUEST_TIMEOUT_SLOW)
-
-
 def ticket_promedio(fecha_desde: str,
                     fecha_hasta: str,
                     id_co: Optional[int] = None) -> dict:
@@ -612,27 +577,6 @@ def inventario_dias(fecha_desde: str,
 
 # -- Endpoints optimizados: 1 llamada, resultado directo, sin calculos --
 
-
-def producto_mas_vendido(fecha_desde: str,
-                         fecha_hasta: str,
-                         id_co: Optional[int] = None,
-                         proveedor_id: Optional[str] = None) -> dict:
-    """Producto con mayor venta neta en un periodo. Una sola llamada, resultado directo.
-    Usa /ventas/productos?limit=1 que ordena por venta_neta DESC.
-    Opcional: filtrar por id_co o proveedor_id."""
-    params = {
-        "fecha_desde": fecha_desde,
-        "fecha_hasta": fecha_hasta,
-        "limit": 1
-    }
-    if id_co:
-        params["id_co"] = id_co
-    if proveedor_id:
-        params["proveedor_id"] = proveedor_id
-    return call_api("GET",
-                    "/ventas/productos",
-                    params,
-                    timeout=REQUEST_TIMEOUT_SLOW)
 
 
 def comparar_productos(fecha_desde: str,
