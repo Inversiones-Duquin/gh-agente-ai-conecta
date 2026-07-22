@@ -71,7 +71,7 @@ ALLOW_DYNAMODB_SCAN_FOR_DEFAULT = os.getenv("ALLOW_DYNAMODB_SCAN_FOR_DEFAULT",
 SYSTEM_PROMPT_CACHE_TTL = int(
     os.getenv("SYSTEM_PROMPT_CACHE_TTL_SECONDS", "300"))
 
-KNOWLEDGE_BASE_ID = os.getenv("BEDROCK_KNOWLEDGE_BASE_ID", "9KMNZ8UPF1")
+KNOWLEDGE_BASE_ID = os.getenv("BEDROCK_KNOWLEDGE_BASE_ID", "OMNLZZWOVC")
 RAG_NUM_RESULTS = 10
 AGENT_MEMORY_TOP_K = 5
 
@@ -81,7 +81,8 @@ DW_API_ID_CIA_DEFAULT = os.getenv("DW_API_ID_CIA_DEFAULT", "1")
 DW_API_MAX_ROWS = int(os.getenv("DW_API_MAX_ROWS", "50"))
 DW_API_TIMEOUT = int(os.getenv("DW_API_REQUEST_TIMEOUT", "60"))
 
-REPORTS_GATEWAY_ID = os.getenv("REPORTS_GATEWAY_ID", "reports-gateway-yt5gh2old4")
+REPORTS_GATEWAY_ID = os.getenv("REPORTS_GATEWAY_ID",
+                               "reports-gateway-yt5gh2old4")
 REPORTS_GATEWAY_REGION = os.getenv("REPORTS_GATEWAY_REGION", "us-east-2")
 
 MCP_GATEWAY_ID = os.getenv("MCP_GATEWAY_ID", "i2d-dw-gateway-lv6e91yj9s")
@@ -177,9 +178,8 @@ def get_system_prompt() -> str:
 def search_knowledge_base(query: str) -> dict:
     """Busca en la base de conocimiento del proyecto AWS.
 
-    Usa esta herramienta para preguntas sobre documentación del proyecto,
-    arquitectura, despliegue, AgentCore, WebSocket, Lambdas, DynamoDB, SQS,
-    SNS, prompts o memoria.
+    Usa esta herramienta para preguntas sobre documentación de procesos, procedimientos, manuales, guías, etc. 
+    que estén en la base de conocimiento.
 
     #Args:
         query: Texto de búsqueda en lenguaje natural.
@@ -247,13 +247,22 @@ def fecha_actual() -> dict:
     import json
     from datetime import datetime
     hoy = datetime.now()
-    return {"status": "success", "content": [{"text": json.dumps({
-        "fecha": hoy.strftime("%Y-%m-%d"),
-        "dia_semana": hoy.strftime("%A"),
-        "semana": hoy.isocalendar()[1],
-        "mes": hoy.month,
-        "ano": hoy.year,
-    }, ensure_ascii=False)}]}
+    return {
+        "status":
+        "success",
+        "content": [{
+            "text":
+            json.dumps(
+                {
+                    "fecha": hoy.strftime("%Y-%m-%d"),
+                    "dia_semana": hoy.strftime("%A"),
+                    "semana": hoy.isocalendar()[1],
+                    "mes": hoy.month,
+                    "ano": hoy.year,
+                },
+                ensure_ascii=False)
+        }]
+    }
 
 
 # =============================================================================
@@ -264,15 +273,33 @@ def _invoke_reports_lambda(tool_name: str, args: dict) -> dict:
     import json, boto3 as _boto3
     payload = {"toolName": tool_name, "arguments": args}
     lam = _boto3.client("lambda", region_name="us-east-2")
-    resp = lam.invoke(FunctionName="reports-handler", InvocationType="RequestResponse", Payload=json.dumps(payload))
+    resp = lam.invoke(FunctionName="reports-handler",
+                      InvocationType="RequestResponse",
+                      Payload=json.dumps(payload))
     result = json.loads(resp["Payload"].read())
     if result.get("isError"):
-        return {"status": "error", "content": [{"text": result.get("content", [{}])[0].get("text", "Error en reporte")}]}
-    return {"status": "success", "content": [{"text": result.get("content", [{}])[0].get("text", str(result))}]}
+        return {
+            "status":
+            "error",
+            "content": [{
+                "text":
+                result.get("content", [{}])[0].get("text", "Error en reporte")
+            }]
+        }
+    return {
+        "status":
+        "success",
+        "content": [{
+            "text":
+            result.get("content", [{}])[0].get("text", str(result))
+        }]
+    }
 
 
 @tool
-def generar_reporte_ventas(id_co: int, fecha_desde: str = "", fecha_hasta: str = "") -> dict:
+def generar_reporte_ventas(id_co: int,
+                           fecha_desde: str = "",
+                           fecha_hasta: str = "") -> dict:
     """Genera reporte HTML interactivo de ventas con graficos Chart.js, KPIs y tabla.
 
     Args:
@@ -283,11 +310,20 @@ def generar_reporte_ventas(id_co: int, fecha_desde: str = "", fecha_hasta: str =
     Retorna URL de descarga del reporte.
     """
     try:
-        return _invoke_reports_lambda("generar_reporte_ventas",
-            {"id_co": id_co, "fecha_desde": fecha_desde or None, "fecha_hasta": fecha_hasta or None})
+        return _invoke_reports_lambda(
+            "generar_reporte_ventas", {
+                "id_co": id_co,
+                "fecha_desde": fecha_desde or None,
+                "fecha_hasta": fecha_hasta or None
+            })
     except Exception as e:
         logger.error("Error generando reporte: %s", e)
-        return {"status": "error", "content": [{"text": "El servicio de reportes no esta disponible."}]}
+        return {
+            "status": "error",
+            "content": [{
+                "text": "El servicio de reportes no esta disponible."
+            }]
+        }
 
 
 # =============================================================================
@@ -355,7 +391,9 @@ def invoke(payload, context):
         ]
 
         # Herramientas
-        tools = get_agent_tools() + [search_knowledge_base, fecha_actual, generar_reporte_ventas]
+        tools = get_agent_tools() + [
+            search_knowledge_base, fecha_actual, generar_reporte_ventas
+        ]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
         # Usar inference profile directamente — el model ID base no soporta
         # on-demand throughput y el reintento crea un segundo Agent en la misma
@@ -384,10 +422,9 @@ def invoke(payload, context):
         if not response_text:
             logger.warning(
                 "Respuesta vacia — stop_reason=%s, content_blocks=%d, "
-                "prompt_len=%d, session=%s",
-                result.stop_reason,
-                len(result.message.get("content", [])),
-                len(prompt), session_id)
+                "prompt_len=%d, session=%s", result.stop_reason,
+                len(result.message.get("content", [])), len(prompt),
+                session_id)
 
         logger.info(
             "OK — sessionId=%s, model=%s, source=%s, prompt_len=%d, response_len=%d",
