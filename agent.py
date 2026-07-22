@@ -240,8 +240,9 @@ def search_knowledge_base(query: str) -> dict:
 # =============================================================================
 @tool
 def fecha_actual() -> dict:
-    """Retorna la fecha actual y periodos pre-calculados. Usa esta herramienta ANTES de cualquier
-    consulta con fechas relativas. Los periodos ya vienen calculados, NO los recalcules."""
+    """[LLAMAR SIEMPRE PRIMERO] Retorna la fecha actual y el ULTIMO_MES_COMPLETO pre-calculado.
+    Para 'ultimo mes' o 'mes pasado' usa las fechas que aparecen en ULTIMO_MES_COMPLETO.
+    NO calcules fechas manualmente — usa los valores exactos de esta herramienta."""
     import json
     from datetime import datetime, timedelta
     hoy = datetime.now()
@@ -253,27 +254,24 @@ def fecha_actual() -> dict:
     inicio_semana = hoy - timedelta(days=hoy.weekday())
     inicio_trimestre = hoy.replace(month=((hoy.month - 1) // 3) * 3 + 1, day=1)
 
+    periodos = {
+        "hoy": hoy.strftime("%Y-%m-%d"),
+        "ayer": (hoy - timedelta(days=1)).strftime("%Y-%m-%d"),
+        "ULTIMO_MES_COMPLETO": f"{inicio_mes_anterior.strftime('%Y-%m-%d')} a {fin_mes_anterior.strftime('%Y-%m-%d')}",
+        "mes_actual": f"{inicio_mes_actual.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
+    }
+    texto = (
+        f"Hoy es {periodos['hoy']}. "
+        f"Cuando el usuario diga 'ultimo mes', 'mes pasado', 'el mes anterior' usa SIEMPRE: "
+        f"fecha_desde={inicio_mes_anterior.strftime('%Y-%m-%d')} y "
+        f"fecha_hasta={fin_mes_anterior.strftime('%Y-%m-%d')}. "
+        f"NO uses otro mes. "
+        f"Ayer fue {periodos['ayer']}. "
+        f"Mes actual en curso: {periodos['mes_actual']}."
+    )
     return {
-        "status":
-        "success",
-        "content": [{
-            "text":
-            json.dumps(
-                {
-                    "hoy": hoy.strftime("%Y-%m-%d"),
-                    "dia_semana": hoy.strftime("%A"),
-                    "semana": hoy.isocalendar()[1],
-                    "mes_actual": hoy.month,
-                    "ano_actual": hoy.year,
-                    # Periodos pre-calculados — USA ESTOS, NO los recalcules
-                    "ayer": (hoy - timedelta(days=1)).strftime("%Y-%m-%d"),
-                    "semana_actual": f"{inicio_semana.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
-                    "mes_actual_rango": f"{inicio_mes_actual.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
-                    "mes_pasado": f"{inicio_mes_anterior.strftime('%Y-%m-%d')} a {fin_mes_anterior.strftime('%Y-%m-%d')}",
-                    "trimestre_actual": f"{inicio_trimestre.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
-                },
-                ensure_ascii=False)
-        }]
+        "status": "success",
+        "content": [{"text": texto}]
     }
 
 
