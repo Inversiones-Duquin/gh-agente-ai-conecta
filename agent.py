@@ -59,8 +59,8 @@ app = BedrockAgentCoreApp()
 
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-2")
-MODEL_ID = "amazon.nova-2-lite-v1:0"
-INFERENCE_PROFILE_ID = "us.amazon.nova-2-lite-v1:0"
+MODEL_ID = "amazon.nova-pro-v1:0"
+INFERENCE_PROFILE_ID = "us.amazon.nova-pro-v1:0"
 
 PROMPT_TABLE = os.getenv("PROMPT_TABLE_NAME", "")
 PROMPT_ID = os.getenv("PROMPT_ID", "")
