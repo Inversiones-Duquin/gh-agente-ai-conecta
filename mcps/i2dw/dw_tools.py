@@ -16,6 +16,7 @@ from i2dw.dw_ventas import (
     comparar_productos as _comparar_productos,
 )
 from i2dw.dw_productos import buscar_productos as _buscar_productos
+from i2dw.dw_clasificaciones import get_clasificaciones as _get_clasificaciones
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
                                    productos_estancados as _productos_estancados,
@@ -23,6 +24,15 @@ from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte
 
 
 # -- @tool wrappers ----------------------------------------------------------
+
+@tool
+def dw_clasificaciones(tipo: str, q: Optional[str] = None) -> dict:
+    """Lista valores de clasificacion disponibles. USA para validar nombres antes de filtrar.
+    tipo: 'categorias', 'subcategorias', 'marcas', 'secciones', 'proveedores'
+    q: opcional, filtra por texto (ej: 'CONGELADOS').
+    Usar cuando el usuario pregunta por una categoria/marca/seccion y necesitas verificar que existe."""
+    return _get_clasificaciones(tipo, q)
+
 
 @tool
 def dw_buscar_proveedor_por_nombre(nombre: str) -> dict:
@@ -100,9 +110,9 @@ def dw_obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hast
 @tool
 def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, limite: int = 5) -> dict:
-    """[VENTAS DE UN PRODUCTO] Busca cuanto vendio un producto por nombre. 1 sola llamada.
-    USA: 'cuanto vendio X?', 'ventas de Y en junio?', 'como le fue a Z este mes?'.
-    NUNCA uses dw_buscar_productos para preguntas de ventas."""
+    """[SOLO PARA PRODUCTOS] Busca cuanto vendio un PRODUCTO por nombre. 1 sola llamada.
+    USA: 'cuanto vendio el ventilador X?', 'ventas de olla a presion?'.
+    NO usar para categorias, marcas, secciones o proveedores — para esos usa dw_ventas_por_dimension."""
     return _buscar_ventas(producto, fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
@@ -116,13 +126,18 @@ def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
 @tool
 def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None, limit: int = 20,
-                              orden: str = "desc", ordenar_por: str = "neto") -> dict:
-    """[HERRAMIENTA UNICA — USA PARA TODO] Ventas agrupadas.
-    dimension = QUE agrupar: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'ciudad'
-    ordenar_por = COMO ordenar: 'neto', 'margen', 'margen_porcentaje', 'cantidad'
-    orden = 'desc' (top) o 'asc' (bottom)
-    ATENCION: dimension NUNCA es 'margen'. 'margen' es ordenar_por."""
-    return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por)
+                              orden: str = "desc", ordenar_por: str = "neto",
+                              filtro: Optional[str] = None) -> dict:
+    """[HERRAMIENTA UNICA] Ventas agrupadas por 1 o mas dimensiones.
+    OBLIGATORIO: llama fecha_actual() PRIMERO si el usuario no especifica fechas.
+    Usa ULTIMO_MES_COMPLETO de fecha_actual() como periodo por defecto.
+    dimension: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'ciudad'
+    Combina: 'co,categoria', 'ciudad,categoria', 'co,producto'
+    filtro: texto para buscar en resultados (ej: 'CONGELADOS', 'BAZURTO').
+    USA filtro cuando pregunten por una entidad especifica dentro de una dimension.
+    Ej: 'en que tiendas se vendio CONGELADOS?' -> dimension='co,categoria', filtro='CONGELADOS'
+    NO inventes fechas. Sin fecha explicita -> fecha_actual() primero."""
+    return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por, filtro)
 
 @tool
 def dw_ticket_promedio(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] = None) -> dict:
@@ -167,6 +182,7 @@ def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
 
 
 DW_TOOLS = [
+    dw_clasificaciones,
     dw_get_ventas, dw_comparar_ventas,
     dw_get_ventas_item, dw_get_ventas_clientes, dw_ventas_por_medio_pago,
     dw_buscar_productos,

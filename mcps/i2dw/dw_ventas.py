@@ -455,9 +455,16 @@ def ventas_por_dimension(dimension: str,
                          id_co: Optional[int] = None,
                          limit: int = 20,
                          orden: str = "desc",
-                         ordenar_por: str = "neto") -> dict:
-    """Ventas agrupadas por dimension. Procesa la respuesta para que el LLM lea valores correctos."""
+                         ordenar_por: str = "neto",
+                         filtro: Optional[str] = None) -> dict:
+    """Ventas agrupadas por dimension, con filtro opcional en memoria.
+    filtro: texto a buscar en los nombres (ej: 'CONGELADOS', 'BAZURTO'). Case-insensitive."""
     import json as _json
+
+    # Si hay filtro, pedir mas datos. Invertir orden si buscamos algo que probablemente
+    # tenga pocas ventas (el filtro suele ser para encontrar entidades especificas)
+    api_limit = max(limit, 500) if filtro else limit
+    api_orden = "asc" if (filtro and orden == "desc") else orden
 
     result = call_api("GET",
                       "/ventas/", {
@@ -465,8 +472,8 @@ def ventas_por_dimension(dimension: str,
                           "fecha_desde": fecha_desde,
                           "fecha_hasta": fecha_hasta,
                           "id_co": id_co,
-                          "limit": limit,
-                          "orden": orden,
+                          "limit": api_limit,
+                          "orden": api_orden,
                           "ordenar_por_agrupado": ordenar_por,
                       },
                       timeout=REQUEST_TIMEOUT_SLOW)
@@ -483,19 +490,68 @@ def ventas_por_dimension(dimension: str,
             {"text": f"Sin datos para {dimension} en {fecha_desde} a {fecha_hasta}."}
         ]}
 
-    # Valores exactos de la API — Nova Pro no los altera
+    # Construir nombre desde campos dinamicos
+    dims = [d.strip() for d in dimension.split(",")]
+
     items = []
-    for f in filas[:limit]:
+    for f in filas:
+        partes = []
+        for d in dims:
+            val = (f.get(d, "") or f.get(f"id_{d}", "") or "").strip()
+            if val:
+                partes.append(str(val))
+        nombre = " / ".join(partes) if partes else str(f.get("grupo", f.get("id_grupo", "")).strip())
+
+        # Aplicar filtro en memoria (case-insensitive, sin espacios extra)
+        if filtro and filtro.strip().lower() not in nombre.lower():
+            continue
+
         items.append({
-            "nombre": f.get("grupo", f.get("id_grupo", "")),
+            "nombre": nombre,
             "venta_neta": f.get("neto", 0),
             "margen": f.get("margen", 0),
             "margen_porcentaje": f.get("margen_porcentaje", 0),
             "unidades": int(f.get("cant_vendida", 0) or 0),
         })
+        if len(items) >= limit:
+            break
 
-    encabezado = f"Resultados para {dimension} ({fecha_desde} a {fecha_hasta}). "
-    encabezado += "Cifras exactas del API. Margen_porcentaje ya calculado."
+    if not items:
+        # Auto-verificar si el filtro existe en la clasificacion correspondiente
+        sugerencias = ""
+        if filtro:
+            # Mapear dimension a tipo de clasificacion
+            tipo_map = {
+                "categoria": "categorias", "co,categoria": "categorias",
+                "ciudad,categoria": "categorias",
+                "proveedor": "proveedores", "co,proveedor": "proveedores",
+                "marca": "marcas", "co,marca": "marcas",
+                "seccion": "secciones", "co,seccion": "secciones",
+                "subcategoria": "subcategorias", "co,subcategoria": "subcategorias",
+            }
+            for dim_key, tipo in tipo_map.items():
+                if dim_key in dimension:
+                    try:
+                        r = call_api("GET", f"/clasificaciones/{tipo}", {"q": filtro}, timeout=10)
+                        t = r.get("content", [{}])[0].get("text", "[]")
+                        datos = _json.loads(t)
+                        if isinstance(datos, dict):
+                            datos = datos.get("data", datos.get("items", []))
+                        if datos:
+                            nombres = [d.get("descripcion", d.get("nombre", "")) for d in datos[:5]]
+                            sugerencias = f" '{tipo}' similares: {', '.join(nombres)}."
+                        else:
+                            sugerencias = f" '{filtro}' no existe en {tipo}. Verifica el nombre."
+                    except Exception:
+                        pass
+                    break
+
+        return {"status": "success", "content": [
+            {"text": f"No se encontro '{filtro}' en {dimension} para {fecha_desde} a {fecha_hasta}.{sugerencias}"}
+        ]}
+
+    encabezado = f"Resultados para {dimension} (filtro: {filtro}) [{fecha_desde} a {fecha_hasta}]. "
+    encabezado += "Cifras exactas del API."
     for i, item in enumerate(items, 1):
         encabezado += (
             f" | {i}. {item['nombre']}: "

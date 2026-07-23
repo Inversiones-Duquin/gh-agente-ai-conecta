@@ -59,8 +59,8 @@ app = BedrockAgentCoreApp()
 
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-2")
-MODEL_ID = "amazon.nova-pro-v1:0"
-INFERENCE_PROFILE_ID = "us.amazon.nova-pro-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-4-6"
+INFERENCE_PROFILE_ID = "us.anthropic.claude-sonnet-4-6"
 
 PROMPT_TABLE = os.getenv("PROMPT_TABLE_NAME", "")
 PROMPT_ID = os.getenv("PROMPT_ID", "")
@@ -387,17 +387,10 @@ def invoke(payload, context):
         if mcp_section:
             system_prompt += "\n" + mcp_section
 
-        # Envolver en SystemContentBlock con cache point para reducir costos 90%
-        # Nova Lite: min 1,536 tokens para caching → ~6K chars ya califica
+        # System prompt con cache point (Claude: min 1K tokens, ~4K chars)
         cached_system_prompt = [
-            {
-                "text": system_prompt
-            },
-            {
-                "cachePoint": {
-                    "type": "default"
-                }
-            },
+            {"text": system_prompt},
+            {"cachePoint": {"type": "default"}},
         ]
 
         # Herramientas
