@@ -2,6 +2,7 @@
 import difflib
 import json, logging, time
 from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Optional
 from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW, MAX_ADMIN_LIST_ITEMS
 
@@ -10,41 +11,23 @@ _index_cache: Optional[dict] = None
 _index_ts: float = 0.0
 
 
-def obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-                                proveedor_id: Optional[str] = None) -> dict:
-    """Reporte del proveedor con totales agregados del periodo."""
+def _descargar_lote(fecha_desde: str, fecha_hasta: str, proveedor_id: str) -> list:
+    """Descarga un lote de datos del proveedor. Retorna lista de filas."""
     import json as _json
-
     result = call_api("GET", "/ventas-proveedores/", {
         "fecha_inicio": fecha_desde, "fecha_fin": fecha_hasta,
         "proveedor_id": proveedor_id
     }, timeout=REQUEST_TIMEOUT_SLOW)
-
     raw = result.get("content", [{}])[0].get("text", "{}")
     try:
         data = _json.loads(raw)
-        filas = data.get("datos", data.get("data", []))
+        return data.get("datos", data.get("data", []))
     except (_json.JSONDecodeError, TypeError):
-        filas = []
+        return []
 
-    if not filas:
-        return {"status": "success", "content": [{"text": _json.dumps({
-            "mensaje": "Sin datos para el periodo solicitado.",
-            "total_venta_neta": 0, "total_unidades": 0,
-            "total_costo_venta": 0, "total_inventario": 0,
-            "productos": 0, "tiendas": 0
-        }, ensure_ascii=False)}]}
 
-    # Agregar totales del periodo
-    total_unidades = sum(int(f.get("cantidad_vendida", 0) or 0) for f in filas)
-    total_neta = sum(float(f.get("venta_neta", 0) or 0) for f in filas)
-    total_costo = sum(float(f.get("coste_venta", 0) or 0) for f in filas)
-    total_inv = sum(int(f.get("cantidad_inventario", 0) or 0) for f in filas)
-
-    # Agrupar por producto, tienda y categoria
-    por_producto = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0, "inventario": 0})
-    por_tienda = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
-    por_categoria = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+def _acumular(filas: list, por_producto: dict, por_tienda: dict, por_categoria: dict):
+    """Acumula metricas de un lote en los diccionarios globales."""
     for f in filas:
         nombre = f.get("descripcion_articulo", "")
         tienda = f.get("punto_de_venta", "")
@@ -64,6 +47,64 @@ def obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: 
             por_categoria[cat]["unidades"] += unds
             por_categoria[cat]["venta_neta"] += neto
             por_categoria[cat]["costo"] += costo
+
+
+def obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
+                                proveedor_id: Optional[str] = None) -> dict:
+    """Reporte del proveedor con totales agregados. Batching interno por semanas."""
+    import json as _json
+
+    # Si el periodo es mayor a 7 dias, dividir en lotes semanales
+    try:
+        d1 = datetime.strptime(fecha_desde or "", "%Y-%m-%d")
+        d2 = datetime.strptime(fecha_hasta or "", "%Y-%m-%d")
+        delta = (d2 - d1).days
+    except (ValueError, TypeError):
+        delta = 0
+        d1 = d2 = None
+
+    if delta > 7 and d1 and d2:
+        # Batching: procesar por semanas
+        por_producto = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0, "inventario": 0})
+        por_tienda = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+        por_categoria = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+        total_lotes = 0
+
+        actual = d1
+        while actual <= d2:
+            fin_lote = min(actual + timedelta(days=6), d2)
+            lote = _descargar_lote(
+                actual.strftime("%Y-%m-%d"),
+                fin_lote.strftime("%Y-%m-%d"),
+                proveedor_id or ""
+            )
+            _acumular(lote, por_producto, por_tienda, por_categoria)
+            total_lotes += 1
+            actual = fin_lote + timedelta(days=1)
+
+        logger.info("Proveedor %s: %d lotes procesados, %d productos",
+                    proveedor_id, total_lotes, len(por_producto))
+    else:
+        # Periodo corto: una sola llamada
+        filas = _descargar_lote(fecha_desde or "", fecha_hasta or "", proveedor_id or "")
+        por_producto = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0, "inventario": 0})
+        por_tienda = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+        por_categoria = defaultdict(lambda: {"unidades": 0, "venta_neta": 0, "costo": 0})
+        _acumular(filas, por_producto, por_tienda, por_categoria)
+
+    if not por_producto:
+        return {"status": "success", "content": [{"text": _json.dumps({
+            "mensaje": "Sin datos para el periodo solicitado.",
+            "total_venta_neta": 0, "total_unidades": 0,
+            "total_costo_venta": 0, "total_inventario": 0,
+            "productos": 0, "tiendas": 0
+        }, ensure_ascii=False)}]}
+
+    # Totales desde los acumuladores
+    total_unidades = sum(d["unidades"] for d in por_producto.values())
+    total_neta = sum(d["venta_neta"] for d in por_producto.values())
+    total_costo = sum(d["costo"] for d in por_producto.values())
+    total_inv = sum(d["inventario"] for d in por_producto.values())
 
     top_productos = sorted(por_producto.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:10]
     top_tiendas = sorted(por_tienda.items(), key=lambda x: x[1]["venta_neta"], reverse=True)[:5]

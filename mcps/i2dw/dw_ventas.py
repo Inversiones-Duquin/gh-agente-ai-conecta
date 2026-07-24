@@ -518,7 +518,6 @@ def ventas_por_dimension(dimension: str,
 
     if not items:
         # Auto-verificar si el filtro existe en la clasificacion correspondiente
-        sugerencias = ""
         if filtro:
             # Mapear dimension a tipo de clasificacion
             tipo_map = {
@@ -538,16 +537,20 @@ def ventas_por_dimension(dimension: str,
                         if isinstance(datos, dict):
                             datos = datos.get("data", datos.get("items", []))
                         if datos:
-                            nombres = [d.get("descripcion", d.get("nombre", "")) for d in datos[:5]]
-                            sugerencias = f" '{tipo}' similares: {', '.join(nombres)}."
+                            nombre_clasif = datos[0].get("descripcion", datos[0].get("nombre", ""))
+                            return {"status": "success", "content": [
+                                {"text": f"'{nombre_clasif}' existe en {tipo} pero NO registro ventas en {fecha_desde} a {fecha_hasta}. Ventas = $0. Es el dato correcto del API — NO uses dw_buscar_ventas."}
+                            ]}
                         else:
-                            sugerencias = f" '{filtro}' no existe en {tipo}. Verifica el nombre."
+                            return {"status": "success", "content": [
+                                {"text": f"'{filtro}' NO existe en {tipo}. No es una {dimension} valida. Si el usuario pregunto por un producto, usa dw_buscar_ventas."}
+                            ]}
                     except Exception:
                         pass
                     break
 
         return {"status": "success", "content": [
-            {"text": f"No se encontro '{filtro}' en {dimension} para {fecha_desde} a {fecha_hasta}.{sugerencias}"}
+            {"text": f"Sin datos para {dimension} en {fecha_desde} a {fecha_hasta}."}
         ]}
 
     encabezado = f"Resultados para {dimension} (filtro: {filtro}) [{fecha_desde} a {fecha_hasta}]. "
