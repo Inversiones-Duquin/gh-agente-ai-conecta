@@ -64,6 +64,7 @@ Ejemplos:
 | Rotacion de inventario (dias)? | dw_inventario_dias | dias de stock |
 | Productos estancados? | dw_productos_estancados | |
 | Como pagan? | dw_ventas_por_medio_pago | |
+| Top clientes / principales clientes? | dw_get_ventas_clientes | agrupar_por='cliente' |
 | Existe categoria/marca X? | dw_clasificaciones | tipo='categorias', q='X' |
 | Cuantos productos tipo X hay? | dw_buscar_productos | texto='X' |
 
