@@ -570,6 +570,128 @@ def ventas_por_dimension(dimension: str,
     ]}
 
 
+def ventas_por_clasificacion(dimension: str,
+                              fecha_desde: str,
+                              fecha_hasta: str,
+                              filtro: str,
+                              id_co: Optional[int] = None,
+                              limit: int = 30,
+                              orden: str = "desc",
+                              ordenar_por: str = "venta_neta") -> dict:
+    """Ventas de productos filtrados por clasificacion (marca, categoria, subcategoria, seccion).
+    Una sola llamada con limit=500 — el endpoint devuelve todo, no requiere paginacion.
+    El ENCABEZADO contiene el TOTAL real de TODOS los productos. USA ESE valor, no recalcules.
+    USA para: 'cuanto vendio la marca X?', 'productos de la categoria Y?', 'marca Disney?'.
+    dimension: 'marca', 'categoria', 'subcategoria' o 'seccion'.
+    filtro: nombre exacto de la clasificacion (ej: 'GH DISNEY', 'CONGELADOS').
+    limit: cuantos productos top incluir en el JSON de respuesta (default 30)."""
+    import json as _json, logging as _logging
+    _logger = _logging.getLogger("dw-ventas")
+
+    dims_validas = {"marca", "categoria", "subcategoria", "seccion"}
+    if dimension not in dims_validas:
+        return {"status": "error", "content": [
+            {"text": f"Dimension '{dimension}' no soportada. Usa: {', '.join(dims_validas)}."}
+        ]}
+
+    # Una sola llamada con limite alto — el endpoint agrega todo server-side
+    result = call_api("GET", "/ventas/por-clasificacion", {
+        dimension: filtro,
+        "fecha_desde": fecha_desde,
+        "fecha_hasta": fecha_hasta,
+        "id_co": id_co,
+        "limit": 500,
+        "orden": "desc",
+        "ordenar_por": ordenar_por,
+    }, timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "[]")
+    try:
+        data = _json.loads(raw)
+        filas = data if isinstance(data, list) else data.get("data", data.get("items", []))
+    except (_json.JSONDecodeError, TypeError):
+        filas = []
+
+    if not filas:
+        # Verificar si la clasificacion existe
+        tipo_map = {"marca": "marcas", "categoria": "categorias",
+                    "subcategoria": "subcategorias", "seccion": "secciones"}
+        tipo = tipo_map.get(dimension, "marcas")
+        try:
+            r = call_api("GET", f"/clasificaciones/{tipo}", {"q": filtro}, timeout=10)
+            t = r.get("content", [{}])[0].get("text", "[]")
+            datos = _json.loads(t)
+            if isinstance(datos, dict):
+                datos = datos.get("data", datos.get("items", []))
+            if datos:
+                nombre_clasif = datos[0].get("descripcion", datos[0].get("nombre", ""))
+                return {"status": "success", "content": [
+                    {"text": f"'{nombre_clasif}' existe en {tipo} pero NO registro ventas en {fecha_desde} a {fecha_hasta}. Ventas = $0."}
+                ]}
+        except Exception:
+            pass
+        return {"status": "success", "content": [
+            {"text": f"'{filtro}' sin ventas en {dimension} [{fecha_desde} a {fecha_hasta}]."}
+        ]}
+
+    # Procesar todas las filas — el endpoint ya devuelve todo (no hay paginacion)
+    items = []
+    total_neto = 0.0
+    total_und = 0
+    total_costo = 0.0
+    total_margen = 0.0
+    total_inv = 0
+    for f in filas:
+        items.append({
+            "producto": (f.get("descripcion_item") or "").strip(),
+            "referencia": (f.get("referencia") or "").strip(),
+            "marca": f.get("marca", ""),
+            "categoria": f.get("categoria", ""),
+            "subcategoria": f.get("subcategoria", ""),
+            "seccion": f.get("seccion", ""),
+            "proveedor": f.get("proveedor", ""),
+            "tienda": f.get("punto_de_venta", ""),
+            "ciudad": f.get("ciudad", ""),
+            "venta_neta": f.get("venta_neta", 0),
+            "margen": f.get("margen", 0),
+            "margen_porcentaje": f.get("margen_porcentaje", 0),
+            "costo": f.get("venta_costo", 0),
+            "unidades": int(f.get("cant_vendida", 0) or 0),
+            "inventario": int(f.get("cantidad_inv", 0) or 0),
+        })
+        total_neto += float(f.get("venta_neta", 0) or 0)
+        total_und += int(f.get("cant_vendida", 0) or 0)
+        total_costo += float(f.get("venta_costo", 0) or 0)
+        total_margen += float(f.get("margen", 0) or 0)
+        total_inv += int(f.get("cantidad_inv", 0) or 0)
+
+    encabezado = (
+        f"{dimension.upper()} '{filtro}' [{fecha_desde} a {fecha_hasta}]. "
+        f"TOTAL: ${total_neto:,.0f} neto | ${total_margen:,.0f} margen | "
+        f"${total_costo:,.0f} costo | {total_und} und | {total_inv} inv | "
+        f"{len(items)} productos. Cifras exactas del API."
+    )
+
+    # Retornar top N productos para no saturar el contexto del modelo
+    top_n = items[:limit]
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps({
+            "filtro": filtro,
+            "dimension": dimension,
+            "periodo": f"{fecha_desde} a {fecha_hasta}",
+            "total_venta_neta": round(total_neto, 2),
+            "total_margen": round(total_margen, 2),
+            "total_costo": round(total_costo, 2),
+            "total_unidades": total_und,
+            "total_inventario": total_inv,
+            "total_productos": len(items),
+            "productos": top_n,
+        }, ensure_ascii=False)}
+    ]}
+
+
 def ventas_por_medio_pago(fecha_desde: str,
                           fecha_hasta: str,
                           id_co: Optional[int] = None,

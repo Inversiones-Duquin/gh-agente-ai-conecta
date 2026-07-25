@@ -9,6 +9,7 @@ from i2dw.dw_ventas import (
     buscar_ventas as _buscar_ventas,
     top_productos as _top_productos, ventas_por_dimension as _ventas_por_dimension,
     ventas_por_medio_pago as _ventas_por_medio_pago,
+    ventas_por_clasificacion as _ventas_por_clasificacion,
     ticket_promedio as _ticket_promedio,
     rotacion_inventario as _rotacion_inventario,
     inventario_dias as _inventario_dias,
@@ -124,6 +125,21 @@ def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
     return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
 
 @tool
+def dw_ventas_por_clasificacion(dimension: str, filtro: str, fecha_desde: str,
+                                  fecha_hasta: str, id_co: Optional[int] = None,
+                                  limit: int = 30, orden: str = "desc",
+                                  ordenar_por: str = "venta_neta") -> dict:
+    """[VENTAS POR MARCA/CATEGORIA/SECCION] Batching interno: descarga TODOS los productos, acumula totales.
+    OBLIGATORIO para: 'cuanto vendio la marca X?', 'productos de categoria Y?', 'marca Disney?'.
+    dimension: 'marca', 'categoria', 'subcategoria' o 'seccion'.
+    filtro: nombre EXACTO de la clasificacion. USA el nombre que devuelve dw_clasificaciones.
+    Ej: dw_clasificaciones('marcas','Disney') -> 'GH DISNEY' -> dw_ventas_por_clasificacion('marca','GH DISNEY',...).
+    El TOTAL en el encabezado es la suma REAL de TODOS los productos (el batching garantiza datos completos)."""
+    return _ventas_por_clasificacion(dimension, fecha_desde, fecha_hasta, filtro,
+                                      id_co, limit, orden, ordenar_por)
+
+
+@tool
 def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
                               id_co: Optional[int] = None, limit: int = 20,
                               orden: str = "desc", ordenar_por: str = "neto",
@@ -187,7 +203,7 @@ DW_TOOLS = [
     dw_get_ventas_item, dw_get_ventas_clientes, dw_ventas_por_medio_pago,
     dw_buscar_productos,
     dw_obtener_reporte_proveedores,
-    dw_buscar_ventas, dw_top_productos, dw_ventas_por_dimension,
+    dw_buscar_ventas, dw_top_productos, dw_ventas_por_clasificacion, dw_ventas_por_dimension,
     dw_buscar_proveedor_por_nombre,
     dw_ticket_promedio, dw_rotacion_inventario, dw_inventario_dias,
     dw_productos_estancados, dw_reporte_proveedor_top,

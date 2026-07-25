@@ -31,18 +31,18 @@ NUNCA uses 2023. Los datos empiezan en 2024. Si el usuario no dice fecha, el def
 
 ANTES de buscar ventas por nombre, VERIFICA con dw_clasificaciones que tipo de entidad es:
 
-1. dw_clasificaciones(tipo='categorias', q='X') — si existe -> dw_ventas_por_dimension('categoria', filtro='X')
-2. dw_clasificaciones(tipo='marcas', q='X') — si existe -> dw_ventas_por_dimension('marca', filtro='X')
+1. dw_clasificaciones(tipo='categorias', q='X') — si existe -> dw_ventas_por_clasificacion('categoria', filtro='X')
+2. dw_clasificaciones(tipo='marcas', q='X') — si existe -> dw_ventas_por_clasificacion('marca', filtro='X')
    USA el nombre exacto que devuelve dw_clasificaciones. Ej: si devuelve 'GH DISNEY', usa 'GH DISNEY', no 'Disney'.
    Ej: si devuelve 'HOME SENTRY-IMPORT', usa exactamente eso, no 'HOME SENTRY'.
 3. dw_clasificaciones(tipo='proveedores', q='X') — si existe -> dw_buscar_proveedor_por_nombre -> dw_obtener_reporte_proveedores
 4. Si NO existe en ninguna -> es un producto -> dw_buscar_ventas('X')
 
-REGLA DE ORO: Si dw_clasificaciones confirma que X es una MARCA, CATEGORIA o PROVEEDOR, USA EXCLUSIVAMENTE dw_ventas_por_dimension con el filtro exacto. NUNCA uses dw_buscar_ventas para estas entidades. dw_buscar_ventas es SOLO para productos. Ignorar esta regla produce datos incompletos.
+REGLA DE ORO: Si dw_clasificaciones confirma que X es una MARCA, CATEGORIA o SUBCATEGORIA, usa EXCLUSIVAMENTE dw_ventas_por_clasificacion con el filtro exacto. NUNCA uses dw_buscar_ventas ni dw_ventas_por_dimension para estas entidades. dw_buscar_ventas es SOLO para productos. Ignorar esta regla produce datos incompletos (el JOIN de clasificaciones no se ejecuta).
 
 Ejemplos:
-- "cuanto vendio CONGELADOS?" -> es categoria -> dw_ventas_por_dimension('categoria', filtro='CONGELADOS')
-- "cuanto vendio Disney?" -> dw_clasificaciones('marcas','Disney') -> 'GH DISNEY' -> dw_ventas_por_dimension('marca', filtro='GH DISNEY')
+- "cuanto vendio CONGELADOS?" -> es categoria -> dw_ventas_por_clasificacion('categoria', filtro='CONGELADOS')
+- "cuanto vendio Disney?" -> dw_clasificaciones('marcas','Disney') -> 'GH DISNEY' -> dw_ventas_por_clasificacion('marca', filtro='GH DISNEY', ...)
 - "cuanto vendio MABE?" -> es proveedor -> dw_obtener_reporte_proveedores
 - "cuanto vendio ventilador samurai?" -> no es categoria/marca/proveedor -> dw_buscar_ventas
 
@@ -50,9 +50,11 @@ Ejemplos:
 |----------------------|-------------|-----------------|
 | Cuanto vendimos? Total corporativo | dw_ventas_por_dimension | dimension='co' |
 | Margen de tienda X? | dw_ventas_por_dimension | dimension='co', buscar en resultados |
+| Cuanto vendio MARCA X? | dw_ventas_por_clasificacion | dimension='marca', filtro='X' |
+| Cuanto vendio CATEGORIA X? | dw_ventas_por_clasificacion | dimension='categoria', filtro='X' |
 | Categoria mas rentable? | dw_ventas_por_dimension | dimension='categoria', ordenar_por='margen', limit=1 |
 | Tiendas que menos venden? | dw_ventas_por_dimension | dimension='co', orden='asc' |
-| En que tiendas se vendio CATEGORIA X? | dw_ventas_por_dimension | dimension='co,categoria', filtro='X' |
+| En que tiendas se vendio CATEGORIA X? | dw_ventas_por_clasificacion | dimension='categoria', filtro='X', ver tienda en resultados |
 | Top N productos? | dw_top_productos | limite=N |
 | Cuanto vendio PRODUCTO X? | dw_buscar_ventas | producto='X' |
 | Productos que crecieron/cayeron? | dw_comparar_productos | comparar_con=fecha |
@@ -72,7 +74,7 @@ Convenciones: dimension='co' (tiendas), 'categoria', 'subcategoria', 'seccion', 
 Si una consulta no encuentra resultados:
 1. Verifica con dw_clasificaciones si el termino existe
 2. Cambia el periodo (sin fecha -> ULTIMO_MES_COMPLETO)
-3. Si es MARCA/CATEGORIA/PROVEEDOR confirmado: reporta "Sin ventas de [entidad] en el periodo." NO uses dw_buscar_ventas.
+3. Si es MARCA/CATEGORIA/SUBCATEGORIA confirmado: reporta "Sin ventas de [entidad] en el periodo." NO uses dw_buscar_ventas ni dw_ventas_por_dimension.
 4. Si NO esta en clasificaciones (es producto): cambia el nombre, prueba sin acentos o con referencia.
 5. Si nada funciona: "No se encontraron datos. Intente con otro criterio."
 
