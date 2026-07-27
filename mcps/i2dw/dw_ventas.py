@@ -349,9 +349,10 @@ def get_ventas_clientes(fecha_desde: str,
                         id_cliente: Optional[int] = None,
                         agrupar_por: str = "cliente",
                         orden: str = "desc",
-                        ordenar_por: str = "neto") -> dict:
+                        ordenar_por: str = "neto",
+                        limit: int = 20) -> dict:
     """Ventas agrupadas por cliente o centro. agrupar_por: 'cliente' o 'co'.
-    Incluye nombre_co, margen y margen_porcentaje."""
+    Incluye nombre_co, margen y margen_porcentaje. limit controla cuantos retornar."""
     return call_api(
         "GET", "/ventas/clientes", {
             "fecha_desde": fecha_desde,
@@ -361,6 +362,7 @@ def get_ventas_clientes(fecha_desde: str,
             "agrupar_por": agrupar_por,
             "orden": orden,
             "ordenar_por": ordenar_por,
+            "limit": limit,
         })
 
 

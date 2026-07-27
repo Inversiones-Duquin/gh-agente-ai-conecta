@@ -133,10 +133,234 @@ def obtener_reporte_proveedores(fecha_desde: Optional[str] = None, fecha_hasta: 
         }, ensure_ascii=False)}
     ]}
 
-def productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
-    """Productos con stock que no han vendido recientemente."""
-    return call_api("GET", "/ventas-proveedores/venta-cero",
-                    {"fecha_fin": fecha_corte, "proveedor_id": proveedor_id})
+def productos_estancados(proveedor_id: str,
+                          dia_periodo_inferior: int = 0,
+                          dia_periodo_superior: int = 30,
+                          limit: int = 30) -> dict:
+    """Productos con stock que no han vendido en N dias. Llama al ERP SIESA via SOAP.
+    proveedor_id: ID del criterio mayor (plan 007). REQUERIDO.
+    dia_periodo_inferior: minimo de dias sin venta (default 0).
+    dia_periodo_superior: maximo de dias sin venta (default 30).
+    limit: cuantos productos top retornar al modelo (default 30, se piden 500 al API)."""
+    import json as _json
+
+    result = call_api("GET", "/ventas-proveedores/venta-cero", {
+        "proveedor_id": proveedor_id,
+        "dia_periodo_inferior": dia_periodo_inferior,
+        "dia_periodo_superior": dia_periodo_superior,
+        "limit": 500,  # maximo al API
+    }, timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "{}")
+    try:
+        data = _json.loads(raw)
+        filas = data if isinstance(data, list) else data.get("datos", data.get("data", data.get("items", [])))
+    except (_json.JSONDecodeError, TypeError):
+        filas = []
+
+    if not filas:
+        return {"status": "success", "content": [
+            {"text": f"Proveedor {proveedor_id}: sin productos estancados ({dia_periodo_inferior}-{dia_periodo_superior} dias)."}
+        ]}
+
+    # Calcular totales
+    total_stock = sum(int(f.get("cant_existencia", 0) or 0) for f in filas)
+    total_items = len(filas)
+
+    # Top N por stock (los que mas preocupan)
+    ordenados = sorted(filas, key=lambda x: int(x.get("cant_existencia", 0) or 0), reverse=True)
+    top = ordenados[:limit]
+
+    items = []
+    for f in top:
+        items.append({
+            "id_item": f.get("id_item", ""),
+            "referencia": (f.get("referencia") or "").strip(),
+            "descripcion": (f.get("descripcion") or "").strip(),
+            "id_co": f.get("id_co", ""),
+            "cant_existencia": int(f.get("cant_existencia", 0) or 0),
+            "dias_ult_venta": int(f.get("dias_ult_venta", 0) or 0),
+            "ult_fecha_venta": f.get("ult_fecha_venta", ""),
+            "ult_fecha_compra": f.get("ult_fecha_compra", ""),
+        })
+
+    encabezado = (
+        f"Productos estancados proveedor {proveedor_id} "
+        f"({dia_periodo_inferior}-{dia_periodo_superior} dias sin venta): "
+        f"{total_items} productos, {total_stock} unidades en stock. "
+        f"Top {len(items)} mostrados."
+    )
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps({
+            "proveedor_id": proveedor_id,
+            "dias_sin_venta": f"{dia_periodo_inferior}-{dia_periodo_superior}",
+            "total_productos": total_items,
+            "total_stock": total_stock,
+            "productos": items,
+        }, ensure_ascii=False)}
+    ]}
+
+def venta_cero_por_centro(proveedor_id: str,
+                           dia_periodo_inferior: int = 0,
+                           dia_periodo_superior: int = 30) -> dict:
+    """Agrupa productos sin venta por centro de operacion. Batching por rangos de dias.
+    Retorna top 5 tiendas con mas stock estancado + top 5 productos por tienda."""
+    import json as _json, logging as _logging
+    from collections import defaultdict
+    _logger = _logging.getLogger("dw-proveedores")
+
+    # Batching: dividir rango de dias en chunks de 30 para no saturar la respuesta
+    CHUNK = 30
+    por_co = defaultdict(lambda: {"stock": 0, "productos": defaultdict(int)})
+    total_items = 0
+
+    lo = dia_periodo_inferior
+    while lo < dia_periodo_superior:
+        hi = min(lo + CHUNK, dia_periodo_superior)
+        result = call_api("GET", "/ventas-proveedores/venta-cero", {
+            "proveedor_id": proveedor_id,
+            "dia_periodo_inferior": lo,
+            "dia_periodo_superior": hi,
+            "limit": 500,
+        }, timeout=REQUEST_TIMEOUT_SLOW)
+
+        raw = result.get("content", [{}])[0].get("text", "{}")
+        try:
+            data = _json.loads(raw)
+            filas = data if isinstance(data, list) else data.get("datos", data.get("data", []))
+        except (_json.JSONDecodeError, TypeError):
+            filas = []
+
+        for f in filas:
+            co = str(f.get("id_co", "")).strip()
+            stock = int(f.get("cant_existencia", 0) or 0)
+            desc = (f.get("descripcion") or "").strip()
+            if co:
+                por_co[co]["stock"] += stock
+                if desc:
+                    por_co[co]["productos"][desc] += stock
+        total_items += len(filas)
+        lo = hi
+
+    if not por_co:
+        return {"status": "success", "content": [
+            {"text": f"Proveedor {proveedor_id}: sin productos estancados ({dia_periodo_inferior}-{dia_periodo_superior} dias)."}
+        ]}
+
+    _logger.info("venta_cero_por_centro %s: %d items, %d tiendas",
+                 proveedor_id, total_items, len(por_co))
+
+    # Top 5 tiendas
+    ranked_tiendas = sorted(por_co.items(), key=lambda x: x[1]["stock"], reverse=True)
+    top_tiendas = []
+    total_stock = 0
+
+    for co, d in ranked_tiendas[:5]:
+        total_stock += d["stock"]
+        # Top 5 productos en esta tienda
+        top_prods = sorted(d["productos"].items(), key=lambda x: x[1], reverse=True)[:5]
+        top_tiendas.append({
+            "id_co": co,
+            "stock_estancado": d["stock"],
+            "total_productos_estancados": len(d["productos"]),
+            "top_5_productos": [
+                {"producto": p[0], "stock": p[1]} for p in top_prods
+            ],
+        })
+
+    encabezado = (
+        f"Proveedor {proveedor_id}: {total_items} productos sin venta "
+        f"({dia_periodo_inferior}-{dia_periodo_superior} dias), "
+        f"{len(por_co)} tiendas, {total_stock} und stock total. "
+        f"Top 5 tiendas con mas stock estancado."
+    )
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps({
+            "proveedor_id": proveedor_id,
+            "dias_sin_venta": f"{dia_periodo_inferior}-{dia_periodo_superior}",
+            "total_tiendas": len(por_co),
+            "total_productos": total_items,
+            "total_stock": total_stock,
+            "top_5_tiendas": top_tiendas,
+        }, ensure_ascii=False)}
+    ]}
+
+
+def ranking_proveedores_venta_cero(dia_periodo_inferior: int = 0,
+                                     dia_periodo_superior: int = 30,
+                                     top_n: int = 10) -> dict:
+    """Ranking de proveedores por stock sin venta. Batching: consulta cada proveedor del indice.
+    Retorna top N proveedores con mas productos estancados."""
+    import json as _json, logging as _logging
+    _logger = _logging.getLogger("dw-proveedores")
+
+    # Obtener indice de proveedores
+    index = _construir_indice()
+    proveedores = list(index.values())
+
+    if not proveedores:
+        return {"status": "success", "content": [{"text": "No se encontro indice de proveedores."}]}
+
+    _logger.info("Ranking venta cero: %d proveedores a consultar", len(proveedores))
+
+    ranking = []
+    for p in proveedores:
+        pid = p["criterio_mayor_id"]
+        nombre = p["nombre"]
+        try:
+            result = call_api("GET", "/ventas-proveedores/venta-cero", {
+                "proveedor_id": pid,
+                "dia_periodo_inferior": dia_periodo_inferior,
+                "dia_periodo_superior": dia_periodo_superior,
+                "limit": 500,
+            }, timeout=REQUEST_TIMEOUT_SLOW)
+
+            raw = result.get("content", [{}])[0].get("text", "{}")
+            data = _json.loads(raw)
+            filas = data if isinstance(data, list) else data.get("datos", data.get("data", []))
+
+            total_stock = sum(int(f.get("cant_existencia", 0) or 0) for f in filas)
+            total_prods = len(filas)
+
+            if total_stock > 0:
+                ranking.append({
+                    "proveedor_id": pid,
+                    "nombre": nombre,
+                    "productos_estancados": total_prods,
+                    "stock_total": total_stock,
+                })
+        except Exception as e:
+            _logger.warning("Error consultando proveedor %s: %s", pid, e)
+            continue
+
+    ranking.sort(key=lambda x: x["stock_total"], reverse=True)
+    top = ranking[:top_n]
+
+    if not top:
+        return {"status": "success", "content": [
+            {"text": f"Ningun proveedor tiene productos sin venta ({dia_periodo_inferior}-{dia_periodo_superior} dias)."}
+        ]}
+
+    total_stock_global = sum(r["stock_total"] for r in ranking)
+    encabezado = (
+        f"Ranking proveedores por stock sin venta ({dia_periodo_inferior}-{dia_periodo_superior} dias): "
+        f"{len(ranking)} proveedores con {total_stock_global} und estancadas. Top {len(top)}:"
+    )
+
+    return {"status": "success", "content": [
+        {"text": encabezado},
+        {"text": _json.dumps({
+            "dias_sin_venta": f"{dia_periodo_inferior}-{dia_periodo_superior}",
+            "total_proveedores": len(ranking),
+            "total_stock_global": total_stock_global,
+            "ranking": top,
+        }, ensure_ascii=False)}
+    ]}
+
 
 def reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
                            proveedor_id: str, ordenar_por: str = "cantidad") -> dict:

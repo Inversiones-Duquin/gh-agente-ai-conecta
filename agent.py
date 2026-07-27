@@ -429,10 +429,21 @@ def invoke(payload, context):
                 len(result.message.get("content", [])), len(prompt),
                 session_id)
 
+        # Extraer stats de cache del response
+        cache_tokens = 0
+        total_tokens = 0
+        try:
+            usage = result.message.get("usage", {})
+            cache_tokens = usage.get("cacheReadInputTokens", 0)
+            total_tokens = usage.get("inputTokens", 0)
+        except (AttributeError, KeyError, TypeError):
+            pass
+
+        cache_pct = f", cache={cache_tokens}/{total_tokens} ({round(cache_tokens/total_tokens*100,1)}%)" if total_tokens > 0 else ""
         logger.info(
-            "OK — sessionId=%s, model=%s, source=%s, prompt_len=%d, response_len=%d",
+            "OK — sessionId=%s, model=%s, source=%s, prompt_len=%d, response_len=%d%s",
             session_id, model_id, _prompt_source, len(prompt),
-            len(response_text))
+            len(response_text), cache_pct)
 
         return {"response": response_text}
 

@@ -21,6 +21,8 @@ from i2dw.dw_clasificaciones import get_clasificaciones as _get_clasificaciones
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
                                    productos_estancados as _productos_estancados,
+                                   venta_cero_por_centro as _venta_cero_por_centro,
+                                   ranking_proveedores_venta_cero as _ranking_proveedores_venta_cero,
                                    reporte_proveedor_top as _reporte_proveedor_top)
 
 
@@ -76,12 +78,13 @@ def dw_get_ventas_clientes(fecha_desde: str, fecha_hasta: str,
                             id_cliente: Optional[int] = None,
                             agrupar_por: str = "cliente",
                             orden: str = "desc",
-                            ordenar_por: str = "neto") -> dict:
-    """Ventas por cliente o por centro.
+                            ordenar_por: str = "neto",
+                            limit: int = 20) -> dict:
+    """Ventas por cliente o por centro. USA limit=20 para 'top clientes'.
     agrupar_por: 'cliente' (default) o 'co' (ranking de clientes por tienda).
     ordenar_por: 'neto', 'cantidad' o 'margen'. Incluye nombre_co, margen y margen_porcentaje."""
     return _get_ventas_clientes(fecha_desde, fecha_hasta, id_co, id_cliente,
-                                agrupar_por, orden, ordenar_por)
+                                agrupar_por, orden, ordenar_por, limit)
 
 @tool
 def dw_ventas_por_medio_pago(fecha_desde: str, fecha_hasta: str,
@@ -177,9 +180,39 @@ def dw_inventario_dias(fecha_desde: str, fecha_hasta: str,
     return _inventario_dias(fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
-def dw_productos_estancados(proveedor_id: Optional[str] = None, fecha_corte: Optional[str] = None) -> dict:
-    """Productos con stock que no han vendido. Usar para 'productos estancados', 'no se vende'."""
-    return _productos_estancados(proveedor_id, fecha_corte)
+def dw_productos_estancados(proveedor_id: str,
+                               dia_periodo_inferior: int = 0,
+                               dia_periodo_superior: int = 30,
+                               limit: int = 30) -> dict:
+    """[PRODUCTOS SIN VENTA] Productos con stock que NO han vendido en N dias. ERP SIESA.
+    proveedor_id: REQUERIDO. ID del criterio mayor del proveedor (plan 007).
+    Usa dw_buscar_proveedor_por_nombre PRIMERO si no sabes el ID.
+    dia_periodo_inferior: minimo de dias sin venta (default 0, usa 30 para 'mas de 1 mes').
+    dia_periodo_superior: maximo de dias sin venta (default 30, usa 90 para 'trimestre').
+    El encabezado contiene el TOTAL real de productos y stock."""
+    return _productos_estancados(proveedor_id, dia_periodo_inferior, dia_periodo_superior, limit)
+
+@tool
+def dw_venta_cero_por_centro(proveedor_id: str,
+                                dia_periodo_inferior: int = 0,
+                                dia_periodo_superior: int = 30) -> dict:
+    """[VENTA CERO POR TIENDA] Top 5 tiendas con mas stock sin venta + top 5 productos por tienda.
+    Batching interno: recorre todos los productos estancados del proveedor y agrupa por centro.
+    proveedor_id: REQUERIDO. ID del criterio mayor. Usa dw_buscar_proveedor_por_nombre primero.
+    dia_periodo_inferior/superior: rango de dias sin venta (default 0-30)."""
+    return _venta_cero_por_centro(proveedor_id, dia_periodo_inferior, dia_periodo_superior)
+
+
+@tool
+def dw_ranking_proveedores_venta_cero(dia_periodo_inferior: int = 0,
+                                        dia_periodo_superior: int = 30,
+                                        top_n: int = 10) -> dict:
+    """[RANKING PROVEEDORES SIN VENTA] Top N proveedores con mas stock estancado.
+    Consulta TODOS los proveedores del indice y rankea por stock sin venta.
+    dia_periodo_inferior/superior: rango de dias sin venta (default 0-30).
+    ADVERTENCIA: puede ser lento (~30s) porque consulta cada proveedor individualmente."""
+    return _ranking_proveedores_venta_cero(dia_periodo_inferior, dia_periodo_superior, top_n)
+
 
 @tool
 def dw_reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
@@ -206,6 +239,7 @@ DW_TOOLS = [
     dw_buscar_ventas, dw_top_productos, dw_ventas_por_clasificacion, dw_ventas_por_dimension,
     dw_buscar_proveedor_por_nombre,
     dw_ticket_promedio, dw_rotacion_inventario, dw_inventario_dias,
-    dw_productos_estancados, dw_reporte_proveedor_top,
+    dw_productos_estancados, dw_venta_cero_por_centro, dw_ranking_proveedores_venta_cero,
+    dw_reporte_proveedor_top,
     dw_comparar_productos,
 ]

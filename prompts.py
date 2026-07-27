@@ -63,6 +63,8 @@ Ejemplos:
 | Productos mas/menos rotados? | dw_rotacion_inventario | unidades vendidas |
 | Rotacion de inventario (dias)? | dw_inventario_dias | dias de stock |
 | Productos estancados? | dw_productos_estancados | |
+| Productos sin venta por tienda? | dw_venta_cero_por_centro | proveedor_id requerido |
+| Que proveedor tiene mas estancados? | dw_ranking_proveedores_venta_cero | top_n=10 |
 | Como pagan? | dw_ventas_por_medio_pago | |
 | Top clientes / principales clientes? | dw_get_ventas_clientes | agrupar_por='cliente' |
 | Existe categoria/marca X? | dw_clasificaciones | tipo='categorias', q='X' |
