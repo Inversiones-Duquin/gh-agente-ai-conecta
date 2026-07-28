@@ -59,8 +59,8 @@ app = BedrockAgentCoreApp()
 
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-2")
-MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-INFERENCE_PROFILE_ID = "us.anthropic.claude-sonnet-4-6"
+MODEL_ID = "moonshotai.kimi-k2.5"
+INFERENCE_PROFILE_ID = "moonshotai.kimi-k2.5"
 
 PROMPT_TABLE = os.getenv("PROMPT_TABLE_NAME", "")
 PROMPT_ID = os.getenv("PROMPT_ID", "")
@@ -255,10 +255,13 @@ def fecha_actual() -> dict:
     inicio_trimestre = hoy.replace(month=((hoy.month - 1) // 3) * 3 + 1, day=1)
 
     periodos = {
-        "hoy": hoy.strftime("%Y-%m-%d"),
+        "hoy":
+        hoy.strftime("%Y-%m-%d"),
         "ayer": (hoy - timedelta(days=1)).strftime("%Y-%m-%d"),
-        "ULTIMO_MES_COMPLETO": f"{inicio_mes_anterior.strftime('%Y-%m-%d')} a {fin_mes_anterior.strftime('%Y-%m-%d')}",
-        "mes_actual": f"{inicio_mes_actual.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
+        "ULTIMO_MES_COMPLETO":
+        f"{inicio_mes_anterior.strftime('%Y-%m-%d')} a {fin_mes_anterior.strftime('%Y-%m-%d')}",
+        "mes_actual":
+        f"{inicio_mes_actual.strftime('%Y-%m-%d')} a {hoy.strftime('%Y-%m-%d')}",
     }
     texto = (
         f"Hoy es {periodos['hoy']}. "
@@ -267,12 +270,8 @@ def fecha_actual() -> dict:
         f"fecha_hasta={fin_mes_anterior.strftime('%Y-%m-%d')}. "
         f"NO uses otro mes. "
         f"Ayer fue {periodos['ayer']}. "
-        f"Mes actual en curso: {periodos['mes_actual']}."
-    )
-    return {
-        "status": "success",
-        "content": [{"text": texto}]
-    }
+        f"Mes actual en curso: {periodos['mes_actual']}.")
+    return {"status": "success", "content": [{"text": texto}]}
 
 
 # =============================================================================
@@ -387,12 +386,6 @@ def invoke(payload, context):
         if mcp_section:
             system_prompt += "\n" + mcp_section
 
-        # System prompt con cache point (Claude: min 1K tokens, ~4K chars)
-        cached_system_prompt = [
-            {"text": system_prompt},
-            {"cachePoint": {"type": "default"}},
-        ]
-
         # Herramientas
         tools = get_agent_tools() + [
             search_knowledge_base, fecha_actual, generar_reporte_ventas
@@ -402,6 +395,19 @@ def invoke(payload, context):
         # on-demand throughput y el reintento crea un segundo Agent en la misma
         # sesión, lo cual no está permitido.
         model_id = INFERENCE_PROFILE_ID or MODEL_ID
+
+        # System prompt con cache point solo para modelos que lo soportan
+        # Claude + Nova: soportan prompt caching nativo en Bedrock
+        # Kimi, Llama, DeepSeek: NO soportan cachePoint
+        model_lower = model_id.lower()
+        supports_cache = any(m in model_lower for m in ("claude", "nova"))
+        if supports_cache:
+            cached_system_prompt = [
+                {"text": system_prompt},
+                {"cachePoint": {"type": "default"}},
+            ]
+        else:
+            cached_system_prompt = [{"text": system_prompt}]
 
         # Modelo con max_tokens explícito para optimizar cuota (Critical Warning de Bedrock)
         # Sin max_tokens explícito, Bedrock reserva el máximo del modelo (8K tokens)
