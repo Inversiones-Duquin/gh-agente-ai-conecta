@@ -17,6 +17,9 @@ from i2dw.dw_ventas import (
     comparar_productos as _comparar_productos,
 )
 from i2dw.dw_productos import buscar_productos as _buscar_productos
+from i2dw.dw_inventarios import (inventario_por_bodega as _inventario_por_bodega,
+                                   inventario_por_centro as _inventario_por_centro,
+                                   rotacion_articulos as _rotacion_articulos)
 from i2dw.dw_clasificaciones import get_clasificaciones as _get_clasificaciones
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
@@ -164,6 +167,40 @@ def dw_ticket_promedio(fecha_desde: str, fecha_hasta: str, id_co: Optional[int] 
     return _ticket_promedio(fecha_desde, fecha_hasta, id_co)
 
 @tool
+def dw_inventario_por_bodega(id_co: Optional[str] = None,
+                                limit: int = 30,
+                                orden: str = "desc") -> dict:
+    """[STOCK POR BODEGA] Cantidad de inventario agrupado por bodega/almacen.
+    USA para: 'stock por bodega', 'que bodega tiene mas inventario?', 'inventario en bodegas de CO X'.
+    id_co: opcional, filtra por centro de operacion.
+    Retorna ranking de bodegas con cantidad total de unidades."""
+    return _inventario_por_bodega(id_co, limit, orden)
+
+
+@tool
+def dw_inventario_por_centro(limit: int = 30,
+                               orden: str = "desc") -> dict:
+    """[STOCK POR TIENDA] Cantidad de inventario agrupado por centro de operacion.
+    USA para: 'que tienda tiene mas stock?', 'ranking de inventario por CO', 'inventario por tienda'.
+    Retorna ranking de COs con ciudad, nombre y cantidad total de unidades."""
+    return _inventario_por_centro(limit, orden)
+
+
+@tool
+def dw_rotacion_articulos(q: Optional[str] = None,
+                            id_co: Optional[str] = None,
+                            limit: int = 30,
+                            orden: str = "desc") -> dict:
+    """[ROTACION POR STOCK REAL] Productos rankeados por cantidad en inventario.
+    USA para: 'productos con mas stock?', 'que articulo tiene mayor inventario?',
+    'productos con menos existencias?', 'buscar inventario de X'.
+    q: busqueda opcional por nombre o referencia del producto.
+    id_co: opcional, filtrar por centro de operacion.
+    orden='asc' para ver los productos con MENOS stock (riesgo de quiebre)."""
+    return _rotacion_articulos(q, id_co, limit, orden)
+
+
+@tool
 def dw_rotacion_inventario(fecha_desde: str, fecha_hasta: str,
                             id_co: Optional[int] = None, limite: int = 20) -> dict:
     """[PRODUCTOS MAS/MENOS ROTADOS] Ranking de productos por unidades vendidas.
@@ -238,7 +275,8 @@ DW_TOOLS = [
     dw_obtener_reporte_proveedores,
     dw_buscar_ventas, dw_top_productos, dw_ventas_por_clasificacion, dw_ventas_por_dimension,
     dw_buscar_proveedor_por_nombre,
-    dw_ticket_promedio, dw_rotacion_inventario, dw_inventario_dias,
+    dw_ticket_promedio, dw_inventario_por_bodega, dw_inventario_por_centro,
+    dw_rotacion_articulos, dw_rotacion_inventario, dw_inventario_dias,
     dw_productos_estancados, dw_venta_cero_por_centro, dw_ranking_proveedores_venta_cero,
     dw_reporte_proveedor_top,
     dw_comparar_productos,
