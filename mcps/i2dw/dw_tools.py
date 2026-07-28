@@ -20,7 +20,8 @@ from i2dw.dw_centros import get_centros_all as _get_centros_all
 from i2dw.dw_productos import buscar_productos as _buscar_productos
 from i2dw.dw_inventarios import (inventario_por_bodega as _inventario_por_bodega,
                                    inventario_por_centro as _inventario_por_centro,
-                                   rotacion_articulos as _rotacion_articulos)
+                                   rotacion_articulos as _rotacion_articulos,
+                                   inventario_productos_por_bodega as _inventario_productos_por_bodega)
 from i2dw.dw_clasificaciones import get_clasificaciones as _get_clasificaciones
 from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte_proveedores,
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
@@ -188,6 +189,20 @@ def dw_inventario_por_bodega(id_co: Optional[str] = None,
 
 
 @tool
+def dw_inventario_productos_por_bodega(nombre_bodega: Optional[str] = None,
+                                         id_bodega: Optional[str] = None,
+                                         limit: int = 30,
+                                         orden: str = "desc") -> dict:
+    """[PRODUCTOS EN BODEGA] Stock detallado de productos en una bodega especifica.
+    USA para: 'productos en bodega X?', 'stock de BODEGA PRINCIPAL',
+    'inventario de bodega BOSQUE HOGAR'.
+    nombre_bodega: nombre parcial o completo de la bodega (ej: 'BODEGA PRINCIPAL').
+    id_bodega: ID numerico si lo conoces (ej: '90107').
+    Usa dw_inventario_por_bodega PRIMERO si no sabes el nombre exacto de la bodega."""
+    return _inventario_productos_por_bodega(nombre_bodega, id_bodega, limit, orden)
+
+
+@tool
 def dw_inventario_por_centro(limit: int = 30,
                                orden: str = "desc") -> dict:
     """[STOCK POR TIENDA] Cantidad de inventario agrupado por centro de operacion.
@@ -286,7 +301,8 @@ DW_TOOLS = [
     dw_obtener_reporte_proveedores,
     dw_buscar_ventas, dw_top_productos, dw_ventas_por_clasificacion, dw_ventas_por_dimension,
     dw_buscar_proveedor_por_nombre,
-    dw_ticket_promedio, dw_inventario_por_bodega, dw_inventario_por_centro,
+    dw_ticket_promedio, dw_inventario_por_bodega, dw_inventario_productos_por_bodega,
+    dw_inventario_por_centro,
     dw_rotacion_articulos, dw_rotacion_inventario, dw_inventario_dias,
     dw_productos_estancados, dw_venta_cero_por_centro, dw_ranking_proveedores_venta_cero,
     dw_reporte_proveedor_top,
