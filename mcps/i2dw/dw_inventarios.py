@@ -13,7 +13,8 @@ def inventario_por_bodega(id_co: Optional[str] = None,
     params = {"agrupar_por": "bodega", "limit": limit,
               "orden": orden, "ordenar_por": "cantidad"}
     if id_co:
-        params["id_co"] = id_co
+        # Normalizar: los COs usan formato NNN (ej: 001, no 1)
+        params["id_co"] = str(id_co).zfill(3)
 
     result = call_api("GET", "/inventarios/", params,
                       timeout=REQUEST_TIMEOUT_SLOW)
@@ -116,7 +117,7 @@ def rotacion_articulos(q: Optional[str] = None,
     if q:
         params["q"] = q
     if id_co:
-        params["id_co"] = id_co
+        params["id_co"] = str(id_co).zfill(3)
 
     result = call_api("GET", "/inventarios/", params,
                       timeout=REQUEST_TIMEOUT_SLOW)
