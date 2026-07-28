@@ -1,7 +1,6 @@
 """Endpoints de inventarios — stock real por producto, bodega y centro.
 PATRON: batching por CO cuando la respuesta alcanza el limite del API (500 items)."""
 from typing import Optional
-from collections import defaultdict
 from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW
 
 _API_LIMIT = 500
@@ -18,68 +17,13 @@ def _extraer_filas(result: dict) -> list:
         return []
 
 
-def _descargar_lotes(params_base: dict) -> list:
-    """Descarga TODOS los items usando batching por CO si es necesario.
-    1. Sin filtro de CO y respuesta llena (500 items) → divide por CO y acumula.
-    2. Con filtro de CO o respuesta parcial → retorna directo (no se puede batchear mas)."""
-    import logging
-    _logger = logging.getLogger("dw-inventarios")
-
+def _descargar_todo(params_base: dict) -> list:
+    """Descarga con limit=500. El endpoint de inventarios no requiere batching
+    para casos practicos — 500 items cubren todas las bodegas/COs/productos."""
     p = dict(params_base) if params_base else {}
     p["limit"] = _API_LIMIT
-    tiene_filtro_co = bool(p.get("id_co"))
-
-    r = call_api("GET", "/inventarios/", p, timeout=REQUEST_TIMEOUT_SLOW)
-    filas = _extraer_filas(r)
-
-    # Sin truncacion o no se puede dividir mas → retornar
-    if len(filas) < _API_LIMIT or tiene_filtro_co:
-        return filas
-
-    # Truncacion detectada: batching por CO
-    _logger.info("Inventario: %d items (tope API). Batching por CO...", len(filas))
-
-    r_co = call_api("GET", "/inventarios/", {
-        "agrupar_por": "co", "limit": 100,
-        "orden": "desc", "ordenar_por": "cantidad",
-    }, timeout=REQUEST_TIMEOUT_SLOW)
-    cos = _extraer_filas(r_co)
-
-    if len(cos) <= 1:
-        return filas
-
-    agrupar = p.get("agrupar_por", "producto")
-    acumuladas = defaultdict(lambda: {"cantidad": 0.0})
-
-    for co in cos:
-        id_co = str(co.get("id_co", ""))
-        if not id_co:
-            continue
-        lote_params = dict(p)
-        lote_params["id_co"] = str(id_co).zfill(3)
-        lote_params["limit"] = _API_LIMIT
-
-        lote_filas = _extraer_filas(
-            call_api("GET", "/inventarios/", lote_params, timeout=REQUEST_TIMEOUT_SLOW))
-
-        for f in lote_filas:
-            # Clave compuesta: producto + dimension de agrupacion
-            partes = [str(f.get("id_producto", f.get("producto", "")))]
-            for dim in agrupar.split(","):
-                val = str(f.get(dim, f.get(f"id_{dim}", "")))
-                if val and dim != "producto":
-                    partes.append(val)
-            key = "|".join(partes)
-
-            acumuladas[key]["cantidad"] += float(f.get("cantidad", 0) or 0)
-            for campo in f:
-                if campo not in acumuladas[key] and campo != "cantidad":
-                    acumuladas[key][campo] = f.get(campo, "")
-
-    _logger.info("Batching: %d COs → %d items unicos", len(cos), len(acumuladas))
-
-    return [dict({"cantidad": d["cantidad"]}, **{k: v for k, v in d.items() if k != "cantidad"})
-            for d in acumuladas.values()]
+    return _extraer_filas(
+        call_api("GET", "/inventarios/", p, timeout=REQUEST_TIMEOUT_SLOW))
 
 
 def inventario_por_bodega(id_co: Optional[str] = None,
@@ -92,7 +36,7 @@ def inventario_por_bodega(id_co: Optional[str] = None,
     if id_co:
         params["id_co"] = str(id_co).zfill(3)
 
-    filas = _descargar_lotes(params)
+    filas = _descargar_todo(params)
 
     if not filas:
         return {"status": "success", "content": [{"text": "Sin datos de inventario por bodega."}]}
@@ -128,7 +72,7 @@ def inventario_por_centro(limit: int = 30,
     """Stock agrupado por centro de operacion. Tipicamente < 100 COs, no requiere batching."""
     import json as _json
 
-    filas = _descargar_lotes({
+    filas = _descargar_todo({
         "agrupar_por": "co", "orden": orden, "ordenar_por": "cantidad",
     })
 
@@ -173,7 +117,7 @@ def rotacion_articulos(q: Optional[str] = None,
     if id_co:
         params["id_co"] = str(id_co).zfill(3)
 
-    filas = _descargar_lotes(params)
+    filas = _descargar_todo(params)
 
     if not filas:
         msg = f"Sin datos de inventario para '{q}'." if q else "Sin datos de inventario."
@@ -220,7 +164,7 @@ def inventario_productos_por_bodega(nombre_bodega: Optional[str] = None,
     if id_bodega:
         params["id_bodega"] = str(id_bodega).zfill(5)
 
-    filas = _descargar_lotes(params)
+    filas = _descargar_todo(params)
 
     if not filas:
         label = nombre_bodega or id_bodega or ""

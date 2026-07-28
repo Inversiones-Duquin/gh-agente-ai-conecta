@@ -63,7 +63,9 @@ Ejemplos:
 | Stock por bodega? | dw_inventario_por_bodega | opcional: id_co |
 | Stock por tienda/CO? | dw_inventario_por_centro | |
 | Productos con mas/menos stock? | dw_rotacion_articulos | orden='desc' (mas) o 'asc' (menos) |
-| Productos mas/menos rotados? | dw_rotacion_inventario | unidades vendidas |
+| Productos mas/menos rotados? | PREGUNTA PRIMERO: 'Te refieres a rotacion por VENTAS (unidades vendidas) o por INVENTARIO (stock/existencias)?' | |
+| Rotacion por VENTAS | dw_rotacion_inventario | Muestra unidades vendidas Y venta_neta |
+| Rotacion por INVENTARIO | dw_rotacion_articulos | Muestra cantidad en stock real |
 | Rotacion de inventario (dias)? | dw_inventario_dias | dias de stock |
 | Productos estancados? | dw_productos_estancados | |
 | Productos sin venta por tienda? | dw_venta_cero_por_centro | proveedor_id requerido |
