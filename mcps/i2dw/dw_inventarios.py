@@ -18,12 +18,55 @@ def _extraer_filas(result: dict) -> list:
 
 
 def _descargar_todo(params_base: dict) -> list:
-    """Descarga con limit=500. El endpoint de inventarios no requiere batching
-    para casos practicos — 500 items cubren todas las bodegas/COs/productos."""
+    """Descarga con two-pass batching si el limite de 500 trunca datos.
+    Pass 1: orden descendente (top 500). Si < 500 → retorna.
+    Pass 2: orden ascendente (bottom 500). Merge deduplicado por id_producto."""
+    import logging
+    _logger = logging.getLogger("dw-inventarios")
+
     p = dict(params_base) if params_base else {}
     p["limit"] = _API_LIMIT
-    return _extraer_filas(
+
+    # Pass 1: orden descendente
+    filas_desc = _extraer_filas(
         call_api("GET", "/inventarios/", p, timeout=REQUEST_TIMEOUT_SLOW))
+
+    if len(filas_desc) < _API_LIMIT:
+        return filas_desc  # Sin truncacion
+
+    # Truncado: Pass 2 con orden inverso para capturar la cola
+    _logger.info("Inventario truncado a %d items. Pass 2 con orden inverso...", len(filas_desc))
+    p2 = dict(p)
+    p2["orden"] = "asc" if p.get("orden", "desc") == "desc" else "desc"
+    p2["limit"] = _API_LIMIT
+    filas_asc = _extraer_filas(
+        call_api("GET", "/inventarios/", p2, timeout=REQUEST_TIMEOUT_SLOW))
+
+    # Merge deduplicado por id_producto (o id_bodega segun agrupar_por)
+    agrupar = p.get("agrupar_por", "producto")
+    visto = set()
+    resultado = []
+
+    for f in filas_desc + filas_asc:
+        # Clave unica: id_producto + dimensiones de agrupacion
+        partes = [str(f.get("id_producto", f.get("producto", "")))]
+        for dim in agrupar.split(","):
+            val = str(f.get(dim, f.get(f"id_{dim}", "")))
+            if val and dim not in ("producto",):
+                partes.append(val)
+        key = "|".join(partes)
+
+        if key not in visto:
+            visto.add(key)
+            resultado.append(f)
+
+    # Re-ordenar por cantidad
+    resultado.sort(key=lambda x: float(x.get("cantidad", 0) or 0),
+                   reverse=p.get("orden", "desc") == "desc")
+
+    _logger.info("Two-pass: %d + %d → %d unicos",
+                 len(filas_desc), len(filas_asc), len(resultado))
+    return resultado
 
 
 def inventario_por_bodega(id_co: Optional[str] = None,
