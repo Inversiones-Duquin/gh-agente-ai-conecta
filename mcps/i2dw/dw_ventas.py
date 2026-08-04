@@ -1,6 +1,6 @@
 """Endpoints de ventas (requieren permisos RBAC)."""
 from typing import Optional
-from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW
+from i2dw.dw_core import call_api, download_all, REQUEST_TIMEOUT_SLOW
 
 
 def get_ventas(fecha_desde: str,
@@ -596,23 +596,15 @@ def ventas_por_clasificacion(dimension: str,
             {"text": f"Dimension '{dimension}' no soportada. Usa: {', '.join(dims_validas)}."}
         ]}
 
-    # Una sola llamada con limite alto — el endpoint agrega todo server-side
-    result = call_api("GET", "/ventas/por-clasificacion", {
+    # download_all: batching automatico por semanas si el periodo es largo
+    filas = download_all("/ventas/por-clasificacion", {
         dimension: filtro,
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta,
         "id_co": id_co,
-        "limit": 500,
         "orden": "desc",
         "ordenar_por": ordenar_por,
-    }, timeout=REQUEST_TIMEOUT_SLOW)
-
-    raw = result.get("content", [{}])[0].get("text", "[]")
-    try:
-        data = _json.loads(raw)
-        filas = data if isinstance(data, list) else data.get("data", data.get("items", []))
-    except (_json.JSONDecodeError, TypeError):
-        filas = []
+    }, key_field="descripcion_item")
 
     if not filas:
         # Verificar si la clasificacion existe

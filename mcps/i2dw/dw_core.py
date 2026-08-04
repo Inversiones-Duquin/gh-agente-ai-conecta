@@ -133,3 +133,68 @@ def call_api(method: str, path: str, params: Optional[Dict[str, Any]] = None,
         return error_response("CONNECTION_ERROR", method=method, path=path, detail=str(e))
     except Exception as e:
         return error_response("INTERNAL_ERROR", method=method, path=path, detail=str(e))
+
+
+def download_all(path: str, params: dict, *,
+                 key_field: str = "id_producto",
+                 timeout: int = None) -> list:
+    """Descarga TODOS los items de un endpoint usando batching por fecha.
+    Sin limit — el API devuelve todo. Si el periodo es largo, divide en semanas
+    y acumula deduplicando por key_field."""
+    import json as _json
+    from datetime import datetime, timedelta
+
+    timeout = timeout or REQUEST_TIMEOUT_SLOW
+
+    # Parsear rango de fechas
+    fd = params.get("fecha_desde") or params.get("fecha_inicio") or ""
+    fh = params.get("fecha_hasta") or params.get("fecha_fin") or ""
+    try:
+        d1 = datetime.strptime(fd, "%Y-%m-%d")
+        d2 = datetime.strptime(fh, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        # Sin fechas: llamada unica
+        p = dict(params)
+        p["orden"] = "desc"
+        r = call_api("GET", path, p, timeout=timeout)
+        raw = r.get("content", [{}])[0].get("text", "{}")
+        try:
+            data = _json.loads(raw)
+            return data if isinstance(data, list) else data.get("data", data.get("items", data.get("datos", [])))
+        except (_json.JSONDecodeError, TypeError):
+            return []
+
+    # Batching por fecha: lotes semanales sin limit
+    acumuladas = {}
+    actual = d1
+    while actual <= d2:
+        fin = min(actual + timedelta(days=6), d2)
+        p = dict(params)
+        p["fecha_desde" if "fecha_desde" in params else "fecha_inicio"] = actual.strftime("%Y-%m-%d")
+        p["fecha_hasta" if "fecha_hasta" in params else "fecha_fin"] = fin.strftime("%Y-%m-%d")
+        p["orden"] = "desc"
+
+        r = call_api("GET", path, p, timeout=timeout)
+        raw = r.get("content", [{}])[0].get("text", "{}")
+        try:
+            data = _json.loads(raw)
+            filas = data if isinstance(data, list) else data.get("data", data.get("items", data.get("datos", [])))
+        except (_json.JSONDecodeError, TypeError):
+            filas = []
+
+        for f in filas:
+            key = str(f.get(key_field, f.get("id_co", f.get("id_bodega", f.get("id_item", "")))))
+            if key not in acumuladas:
+                acumuladas[key] = dict(f)
+            else:
+                for campo in ("cantidad", "venta_neta", "neto", "margen", "cant_vendida",
+                              "cantidad_inv", "cantidad_vendida", "costo", "venta_costo"):
+                    if campo in f and campo in acumuladas[key]:
+                        try:
+                            acumuladas[key][campo] = float(acumuladas[key].get(campo, 0) or 0) + float(f.get(campo, 0) or 0)
+                        except (ValueError, TypeError):
+                            pass
+
+        actual = fin + timedelta(days=1)
+
+    return list(acumuladas.values())

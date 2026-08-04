@@ -62,6 +62,20 @@ REGION = os.getenv("AWS_REGION", "us-east-2")
 MODEL_ID = "moonshotai.kimi-k2.5"
 INFERENCE_PROFILE_ID = "moonshotai.kimi-k2.5"
 
+# Modelos disponibles para ruteo
+MODEL_NOVA_LITE = "us.amazon.nova-2-lite-v1:0"  # Clasificador + respuestas simples
+MODEL_KIMI = "moonshotai.kimi-k2.5"  # Default: reportes, KPIs
+MODEL_SONNET = "us.anthropic.claude-sonnet-4-6"  # Analisis complejo + fallback
+
+# Prompt del clasificador (sin herramientas, solo clasifica la intencion)
+CLASSIFIER_PROMPT = """Clasifica la solicitud del usuario en EXACTAMENTE una categoria. Responde SOLO con la palabra clave.
+
+Categorias:
+- greeting: Saludo, agradecimiento, despedida, "hola", "gracias", "como estas", ayuda basica.
+- report: Reporte de ventas, KPIs, top productos, ranking, comparativas, inventario, rotacion, Excel, PDF.
+- analysis: Analisis gerencial, explicacion compleja, recomendacion estrategica, diagnostico, "por que", "como mejorar".
+- large: Solicitud muy amplia o sin filtros (ej: "dame todas las ventas", "todo el año", "todos los productos")."""
+
 PROMPT_TABLE = os.getenv("PROMPT_TABLE_NAME", "")
 PROMPT_ID = os.getenv("PROMPT_ID", "")
 DEFAULT_PROMPT_ID = os.getenv("DEFAULT_PROMPT_ID", "default-dw-sales-v1")
@@ -71,7 +85,7 @@ ALLOW_DYNAMODB_SCAN_FOR_DEFAULT = os.getenv("ALLOW_DYNAMODB_SCAN_FOR_DEFAULT",
 SYSTEM_PROMPT_CACHE_TTL = int(
     os.getenv("SYSTEM_PROMPT_CACHE_TTL_SECONDS", "300"))
 
-KNOWLEDGE_BASE_ID = os.getenv("BEDROCK_KNOWLEDGE_BASE_ID", "OMNLZZWOVC")
+KNOWLEDGE_BASE_ID = os.getenv("BEDROCK_KNOWLEDGE_BASE_ID", "PMWZIGLYXK")
 RAG_NUM_RESULTS = 10
 AGENT_MEMORY_TOP_K = 5
 
@@ -335,6 +349,83 @@ def generar_reporte_ventas(id_co: int,
         }
 
 
+@tool
+def generar_reporte_comparativo(id_co: int, fecha_desde_1: str,
+                                fecha_hasta_1: str, fecha_desde_2: str,
+                                fecha_hasta_2: str) -> dict:
+    """Genera reporte HTML comparativo entre dos periodos. KPIs duales, graficos overlay, tabla con variacion %.
+    USA para: 'compara junio vs mayo', 'reporte comparativo Bazurto', 'como vamos vs mes pasado'.
+
+    Args:
+        id_co: ID del centro de operaciones (ej: 1 para Bazurto).
+        fecha_desde_1: Inicio periodo actual YYYY-MM-DD.
+        fecha_hasta_1: Fin periodo actual YYYY-MM-DD.
+        fecha_desde_2: Inicio periodo anterior YYYY-MM-DD.
+        fecha_hasta_2: Fin periodo anterior YYYY-MM-DD.
+
+    Retorna URL de descarga del reporte comparativo."""
+    try:
+        return _invoke_reports_lambda(
+            "generar_reporte_comparativo", {
+                "id_co": id_co,
+                "fecha_desde_1": fecha_desde_1,
+                "fecha_hasta_1": fecha_hasta_1,
+                "fecha_desde_2": fecha_desde_2,
+                "fecha_hasta_2": fecha_hasta_2,
+            })
+    except Exception as e:
+        logger.error("Error generando reporte comparativo: %s", e)
+        return {
+            "status": "error",
+            "content": [{
+                "text": "El servicio de reportes no esta disponible."
+            }]
+        }
+
+
+# =============================================================================
+# Clasificador de solicitudes — decide que modelo usar
+# =============================================================================
+def classify_request(prompt: str) -> tuple:
+    """Clasifica la solicitud con Nova Lite (rapido, barato).
+    Retorna (categoria, modelo_sugerido)."""
+    import boto3 as _boto3
+    try:
+        br = _boto3.client("bedrock-runtime", region_name=REGION)
+        resp = br.converse(
+            modelId=MODEL_NOVA_LITE,
+            messages=[{
+                "role": "user",
+                "content": [{
+                    "text": prompt
+                }]
+            }],
+            system=[{
+                "text": CLASSIFIER_PROMPT
+            }],
+            inferenceConfig={
+                "maxTokens": 10,
+                "temperature": 0.0
+            },
+        )
+        category = resp["output"]["message"]["content"][0]["text"].strip(
+        ).lower()
+        # Normalizar
+        if "greeting" in category:
+            return ("greeting", MODEL_NOVA_LITE)
+        elif "report" in category:
+            return ("report", MODEL_KIMI)
+        elif "analysis" in category:
+            return ("analysis", MODEL_SONNET)
+        elif "large" in category:
+            return ("large", None)  # None = pedir filtros, no ejecutar
+        else:
+            return ("report", MODEL_KIMI)  # default
+    except Exception as e:
+        logger.warning("Clasificador fallo: %s — usando modelo default", e)
+        return ("report", MODEL_KIMI)
+
+
 # =============================================================================
 # Entrypoint
 # =============================================================================
@@ -361,6 +452,24 @@ def invoke(payload, context):
         return {"error": "Memory not configured"}
 
     current_session = session_id
+
+    # Ruteo de modelo segun complejidad
+    category, suggested_model = classify_request(prompt)
+    logger.info("Clasificacion: '%s' → modelo=%s", category, suggested_model
+                or "PEDIR_FILTROS")
+
+    # Solicitud muy amplia → pedir filtros
+    if suggested_model is None:
+        return {
+            "response":
+            ("Tu solicitud es muy amplia y puede generar un error por exceso de datos. "
+             "Por favor, acota la consulta con alguno de estos filtros:\n"
+             "- Un rango de fechas especifico (ej: 'junio 2026', 'ultima semana')\n"
+             "- Una tienda o centro de operacion (ej: 'Bazurto', 'Castellana')\n"
+             "- Una categoria, marca o proveedor especifico\n"
+             "- Un limite de resultados (ej: 'top 10', 'top 20')\n\n"
+             "¿Puedes reformular tu consulta?")
+        }
 
     try:
         actor_id = (context.headers.get(
@@ -391,10 +500,9 @@ def invoke(payload, context):
             search_knowledge_base, fecha_actual, generar_reporte_ventas
         ]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
-        # Usar inference profile directamente — el model ID base no soporta
-        # on-demand throughput y el reintento crea un segundo Agent en la misma
-        # sesión, lo cual no está permitido.
-        model_id = INFERENCE_PROFILE_ID or MODEL_ID
+
+        # Modelo seleccionado por el clasificador (o default si fallo)
+        model_id = suggested_model or INFERENCE_PROFILE_ID or MODEL_ID
 
         # System prompt con cache point solo para modelos que lo soportan
         # Claude + Nova: soportan prompt caching nativo en Bedrock
@@ -403,15 +511,19 @@ def invoke(payload, context):
         supports_cache = any(m in model_lower for m in ("claude", "nova"))
         if supports_cache:
             cached_system_prompt = [
-                {"text": system_prompt},
-                {"cachePoint": {"type": "default"}},
+                {
+                    "text": system_prompt
+                },
+                {
+                    "cachePoint": {
+                        "type": "default"
+                    }
+                },
             ]
         else:
             cached_system_prompt = [{"text": system_prompt}]
 
         # Modelo con max_tokens explícito para optimizar cuota (Critical Warning de Bedrock)
-        # Sin max_tokens explícito, Bedrock reserva el máximo del modelo (8K tokens)
-        # → desperdicia cuota y puede causar ThrottlingException
         from strands.models.bedrock import BedrockModel
         model = BedrockModel(model_id=model_id, max_tokens=4096)
 
@@ -420,10 +532,42 @@ def invoke(payload, context):
                       system_prompt=cached_system_prompt,
                       tools=tools)
 
-        logger.debug("Agente ejecutando con modelo=%s, tools=%d", model_id,
-                     len(tools))
+        logger.info("Ejecutando — model=%s, category=%s, tools=%d", model_id,
+                    category, len(tools))
 
-        result = agent(prompt)
+        try:
+            result = agent(prompt)
+        except Exception as agent_error:
+            # Fallback: si falla con Kimi, reintentar con Claude Sonnet
+            if MODEL_SONNET not in model_id:
+                logger.warning(
+                    "Agente fallo con %s — reintentando con Sonnet...",
+                    model_id)
+                model_id = MODEL_SONNET
+                model_lower = model_id.lower()
+                supports_cache = any(m in model_lower
+                                     for m in ("claude", "nova"))
+                cached_system_prompt = [
+                    {
+                        "text": system_prompt
+                    },
+                    {
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    },
+                ] if supports_cache else [{
+                    "text": system_prompt
+                }]
+                model = BedrockModel(model_id=model_id, max_tokens=4096)
+                agent = Agent(model=model,
+                              session_manager=session_mgr,
+                              system_prompt=cached_system_prompt,
+                              tools=tools)
+                result = agent(prompt)
+                logger.info("Reintento con Sonnet exitoso")
+            else:
+                raise agent_error
 
         # Usar AgentResult.__str__() que itera TODOS los content blocks buscando texto
         response_text = str(result).strip()
@@ -447,9 +591,9 @@ def invoke(payload, context):
 
         cache_pct = f", cache={cache_tokens}/{total_tokens} ({round(cache_tokens/total_tokens*100,1)}%)" if total_tokens > 0 else ""
         logger.info(
-            "OK — sessionId=%s, model=%s, source=%s, prompt_len=%d, response_len=%d%s",
-            session_id, model_id, _prompt_source, len(prompt),
-            len(response_text), cache_pct)
+            "OK — sessionId=%s, model=%s, category=%s, prompt_len=%d, response_len=%d%s",
+            session_id, model_id, category, len(prompt), len(response_text),
+            cache_pct)
 
         return {"response": response_text}
 
