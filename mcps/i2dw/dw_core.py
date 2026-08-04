@@ -153,8 +153,9 @@ def download_all(path: str, params: dict, *,
         d1 = datetime.strptime(fd, "%Y-%m-%d")
         d2 = datetime.strptime(fh, "%Y-%m-%d")
     except (ValueError, TypeError):
-        # Sin fechas: llamada unica
+        # Sin fechas: llamada unica con el maximo del API
         p = dict(params)
+        p["limit"] = 500
         p["orden"] = "desc"
         r = call_api("GET", path, p, timeout=timeout)
         raw = r.get("content", [{}])[0].get("text", "{}")
@@ -164,14 +165,18 @@ def download_all(path: str, params: dict, *,
         except (_json.JSONDecodeError, TypeError):
             return []
 
-    # Batching por fecha: lotes semanales sin limit
+    # Batching por fecha con sub-division si un lote se trunca (500 items exactos)
     acumuladas = {}
-    actual = d1
-    while actual <= d2:
-        fin = min(actual + timedelta(days=6), d2)
+    cola = [(d1, d2)]  # (inicio, fin) de cada chunk por procesar
+
+    while cola:
+        chunk_start, chunk_end = cola.pop(0)
+        chunk_days = (chunk_end - chunk_start).days + 1
+
         p = dict(params)
-        p["fecha_desde" if "fecha_desde" in params else "fecha_inicio"] = actual.strftime("%Y-%m-%d")
-        p["fecha_hasta" if "fecha_hasta" in params else "fecha_fin"] = fin.strftime("%Y-%m-%d")
+        p["fecha_desde" if "fecha_desde" in params else "fecha_inicio"] = chunk_start.strftime("%Y-%m-%d")
+        p["fecha_hasta" if "fecha_hasta" in params else "fecha_fin"] = chunk_end.strftime("%Y-%m-%d")
+        p["limit"] = 500  # Maximo que acepta el API
         p["orden"] = "desc"
 
         r = call_api("GET", path, p, timeout=timeout)
@@ -181,6 +186,13 @@ def download_all(path: str, params: dict, *,
             filas = data if isinstance(data, list) else data.get("data", data.get("items", data.get("datos", [])))
         except (_json.JSONDecodeError, TypeError):
             filas = []
+
+        # Si se trunca (exacto 500 items) y el rango es > 1 dia, sub-dividir
+        if len(filas) >= 500 and chunk_days > 1:
+            mid = chunk_start + timedelta(days=chunk_days // 2)
+            cola.insert(0, (mid, chunk_end))
+            cola.insert(0, (chunk_start, mid - timedelta(days=1)))
+            continue
 
         for f in filas:
             key = str(f.get(key_field, f.get("id_co", f.get("id_bodega", f.get("id_item", "")))))
@@ -194,7 +206,5 @@ def download_all(path: str, params: dict, *,
                             acumuladas[key][campo] = float(acumuladas[key].get(campo, 0) or 0) + float(f.get(campo, 0) or 0)
                         except (ValueError, TypeError):
                             pass
-
-        actual = fin + timedelta(days=1)
 
     return list(acumuladas.values())

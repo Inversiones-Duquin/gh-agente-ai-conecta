@@ -596,15 +596,23 @@ def ventas_por_clasificacion(dimension: str,
             {"text": f"Dimension '{dimension}' no soportada. Usa: {', '.join(dims_validas)}."}
         ]}
 
-    # download_all: batching automatico por semanas si el periodo es largo
-    filas = download_all("/ventas/por-clasificacion", {
+    # limit alto para recibir todo
+    result = call_api("GET", "/ventas/por-clasificacion", {
         dimension: filtro,
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta,
         "id_co": id_co,
+        "limit": 10000,
         "orden": "desc",
         "ordenar_por": ordenar_por,
-    }, key_field="descripcion_item")
+    }, timeout=REQUEST_TIMEOUT_SLOW)
+
+    raw = result.get("content", [{}])[0].get("text", "[]")
+    try:
+        data = _json.loads(raw)
+        filas = data if isinstance(data, list) else data.get("data", data.get("items", []))
+    except (_json.JSONDecodeError, TypeError):
+        filas = []
 
     if not filas:
         # Verificar si la clasificacion existe
@@ -662,26 +670,27 @@ def ventas_por_clasificacion(dimension: str,
     encabezado = (
         f"{dimension.upper()} '{filtro}' [{fecha_desde} a {fecha_hasta}]. "
         f"TOTAL: ${total_neto:,.0f} neto | ${total_margen:,.0f} margen | "
-        f"${total_costo:,.0f} costo | {total_und} und | {total_inv} inv | "
-        f"{len(items)} productos. Cifras exactas del API."
+        f"{total_und} und | {total_inv} inv | {len(items)} productos."
     )
 
-    # Retornar top N productos para no saturar el contexto del modelo
-    top_n = items[:limit]
+    # Solo top 20 productos al modelo — el total ya esta en el encabezado
+    top_productos = items[:20]
 
     return {"status": "success", "content": [
         {"text": encabezado},
         {"text": _json.dumps({
+            "totales": {
+                "venta_neta": round(total_neto, 2),
+                "margen": round(total_margen, 2),
+                "costo": round(total_costo, 2),
+                "unidades": total_und,
+                "inventario": total_inv,
+                "total_productos": len(items),
+            },
             "filtro": filtro,
             "dimension": dimension,
             "periodo": f"{fecha_desde} a {fecha_hasta}",
-            "total_venta_neta": round(total_neto, 2),
-            "total_margen": round(total_margen, 2),
-            "total_costo": round(total_costo, 2),
-            "total_unidades": total_und,
-            "total_inventario": total_inv,
-            "total_productos": len(items),
-            "productos": top_n,
+            "productos": top_productos,
         }, ensure_ascii=False)}
     ]}
 

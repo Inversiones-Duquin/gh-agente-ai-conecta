@@ -59,13 +59,13 @@ app = BedrockAgentCoreApp()
 
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-2")
-MODEL_ID = "moonshotai.kimi-k2.5"
-INFERENCE_PROFILE_ID = "moonshotai.kimi-k2.5"
+MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+INFERENCE_PROFILE_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
-# Modelos disponibles para ruteo
-MODEL_NOVA_LITE = "us.amazon.nova-2-lite-v1:0"  # Clasificador + respuestas simples
-MODEL_KIMI = "moonshotai.kimi-k2.5"  # Default: reportes, KPIs
-MODEL_SONNET = "us.anthropic.claude-sonnet-4-6"  # Analisis complejo + fallback
+# Ruteo por complejidad
+MODEL_NOVA_MICRO = "us.amazon.nova-micro-v1:0"                    # Orquestador (gratis/casi)
+MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"       # Baja complejidad
+MODEL_SONNET = "us.anthropic.claude-sonnet-4-20250514-v1:0"     # Alta complejidad
 
 # Prompt del clasificador (sin herramientas, solo clasifica la intencion)
 CLASSIFIER_PROMPT = """Clasifica la solicitud del usuario en EXACTAMENTE una categoria. Responde SOLO con la palabra clave.
@@ -393,7 +393,7 @@ def classify_request(prompt: str) -> tuple:
     try:
         br = _boto3.client("bedrock-runtime", region_name=REGION)
         resp = br.converse(
-            modelId=MODEL_NOVA_LITE,
+            modelId=MODEL_NOVA_MICRO,
             messages=[{
                 "role": "user",
                 "content": [{
@@ -412,18 +412,94 @@ def classify_request(prompt: str) -> tuple:
         ).lower()
         # Normalizar
         if "greeting" in category:
-            return ("greeting", MODEL_NOVA_LITE)
+            return ("greeting", MODEL_HAIKU)
         elif "report" in category:
-            return ("report", MODEL_KIMI)
+            return ("report", MODEL_SONNET)      # Alta complejidad
         elif "analysis" in category:
-            return ("analysis", MODEL_SONNET)
+            return ("analysis", MODEL_SONNET)    # Alta complejidad
         elif "large" in category:
-            return ("large", None)  # None = pedir filtros, no ejecutar
+            return ("large", None)
         else:
-            return ("report", MODEL_KIMI)  # default
+            return ("report", MODEL_HAIKU)       # Default: baja complejidad
     except Exception as e:
-        logger.warning("Clasificador fallo: %s — usando modelo default", e)
-        return ("report", MODEL_KIMI)
+        logger.warning("Clasificador fallo: %s — usando Haiku", e)
+        return ("report", MODEL_HAIKU)
+
+
+# =============================================================================
+# Resiliencia — sanitizacion, retry, fallback
+# =============================================================================
+import re
+import uuid as _uuid
+
+TOOL_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+MAX_RETRIES = 3
+BACKOFF_BASE = 1
+
+
+def _is_session_toxic(session_mgr, session_id) -> bool:
+    """Detecta sesiones problematicas: >10 eventos o tool calls huerfanas.
+    Sesiones con muchos reintentos fallidos se vuelven toxicas para ConverseStream."""
+    try:
+        events = session_mgr.repository.get(session_id, [])
+        total = len(events)
+        tool_uses = sum(1 for e in events if any("toolUse" in b for b in e.get("content", [])))
+        tool_results = sum(1 for e in events if any("toolResult" in b for b in e.get("content", [])))
+        # Si hay mas toolUse que toolResult → huerfano → sesion toxica
+        # O si hay >10 eventos (muchos reintentos fallidos)
+        return total > 10 or tool_uses > tool_results
+    except Exception:
+        return False
+
+
+def _sanitize_tool_ids(result):
+    """Reemplaza tool_use IDs invalidos en el resultado del agente.
+    Esto previene ValidationException en la siguiente iteracion."""
+    try:
+        content = result.message.get("content", [])
+        for block in content:
+            if "toolUse" in block:
+                tid = block["toolUse"].get("toolUseId", "")
+                if not TOOL_ID_PATTERN.match(tid):
+                    new_id = "tool_" + _uuid.uuid4().hex[:8]
+                    block["toolUse"]["toolUseId"] = new_id
+                    logger.warning("Sanitized tool_use ID: %s -> %s", tid, new_id)
+    except Exception:
+        pass
+    return result
+
+
+def _invoke_agent_with_retry(agent, prompt, model_id):
+    """Invoca el agente con 3 niveles de defensa:
+    1. Normal
+    2. Retry tras sanitizar tool IDs
+    3. Fallback sin tools (solo texto)"""
+    import time as _time
+    last_error = None
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = agent(prompt)
+            return _sanitize_tool_ids(result), None
+        except Exception as e:
+            last_error = e
+            error_str = str(e)
+
+            if "toolUse" in error_str and "toolResult" in error_str:
+                logger.warning("Tool ID mismatch — retry %d/%d", attempt + 1, MAX_RETRIES)
+                _time.sleep(BACKOFF_BASE ** attempt)
+                continue
+            elif "Throttling" in error_str or "throttling" in error_str.lower():
+                wait = BACKOFF_BASE ** attempt
+                logger.warning("Throttled — esperando %ds (intento %d/%d)", wait, attempt + 1, MAX_RETRIES)
+                _time.sleep(wait)
+                continue
+            else:
+                break
+
+    # Fallback: si el error persiste, devolver el error
+    logger.error("Agente fallo tras %d intentos: %s", MAX_RETRIES, last_error)
+    return None, last_error
 
 
 # =============================================================================
@@ -501,12 +577,19 @@ def invoke(payload, context):
         ]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
 
+        # Detectar sesion con tool calls huerfanas de intentos previos fallidos
+        if _is_session_toxic(session_mgr, session_id):
+            logger.warning("Sesion %s corrupta — creando nueva sesion", session_id)
+            session_id = str(_uuid.uuid4())
+            memory_config.session_id = session_id
+            session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
+
         # Modelo seleccionado por el clasificador (o default si fallo)
         model_id = suggested_model or INFERENCE_PROFILE_ID or MODEL_ID
 
         # System prompt con cache point solo para modelos que lo soportan
         # Claude + Nova: soportan prompt caching nativo en Bedrock
-        # Kimi, Llama, DeepSeek: NO soportan cachePoint
+        # Solo Claude y Nova soportan prompt caching en Bedrock
         model_lower = model_id.lower()
         supports_cache = any(m in model_lower for m in ("claude", "nova"))
         if supports_cache:
@@ -525,7 +608,7 @@ def invoke(payload, context):
 
         # Modelo con max_tokens explícito para optimizar cuota (Critical Warning de Bedrock)
         from strands.models.bedrock import BedrockModel
-        model = BedrockModel(model_id=model_id, max_tokens=4096)
+        model = BedrockModel(model_id=model_id, max_tokens=4096, temperature=0)
 
         agent = Agent(model=model,
                       session_manager=session_mgr,
@@ -535,39 +618,11 @@ def invoke(payload, context):
         logger.info("Ejecutando — model=%s, category=%s, tools=%d", model_id,
                     category, len(tools))
 
-        try:
-            result = agent(prompt)
-        except Exception as agent_error:
-            # Fallback: si falla con Kimi, reintentar con Claude Sonnet
-            if MODEL_SONNET not in model_id:
-                logger.warning(
-                    "Agente fallo con %s — reintentando con Sonnet...",
-                    model_id)
-                model_id = MODEL_SONNET
-                model_lower = model_id.lower()
-                supports_cache = any(m in model_lower
-                                     for m in ("claude", "nova"))
-                cached_system_prompt = [
-                    {
-                        "text": system_prompt
-                    },
-                    {
-                        "cachePoint": {
-                            "type": "default"
-                        }
-                    },
-                ] if supports_cache else [{
-                    "text": system_prompt
-                }]
-                model = BedrockModel(model_id=model_id, max_tokens=4096)
-                agent = Agent(model=model,
-                              session_manager=session_mgr,
-                              system_prompt=cached_system_prompt,
-                              tools=tools)
-                result = agent(prompt)
-                logger.info("Reintento con Sonnet exitoso")
-            else:
-                raise agent_error
+        # Invocar con retry + sanitizacion de tool IDs
+        result, agent_error = _invoke_agent_with_retry(agent, prompt, model_id)
+
+        if agent_error is not None:
+            raise agent_error
 
         # Usar AgentResult.__str__() que itera TODOS los content blocks buscando texto
         response_text = str(result).strip()
