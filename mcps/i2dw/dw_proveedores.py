@@ -4,7 +4,7 @@ import json, logging, time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
-from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW, MAX_ADMIN_LIST_ITEMS
+from i2dw.dw_core import call_api, REQUEST_TIMEOUT_SLOW
 
 logger = logging.getLogger("dw-proveedores")
 _index_cache: Optional[dict] = None
@@ -148,7 +148,7 @@ def productos_estancados(proveedor_id: str,
         "proveedor_id": proveedor_id,
         "dia_periodo_inferior": dia_periodo_inferior,
         "dia_periodo_superior": dia_periodo_superior,
-        "limit": 500,  # maximo al API
+        # sin limit — API devuelve todo
     }, timeout=REQUEST_TIMEOUT_SLOW)
 
     raw = result.get("content", [{}])[0].get("text", "{}")
@@ -371,7 +371,7 @@ def reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
 
 def listar_proveedores() -> dict:
     """Lista proveedores admin con criterio_mayor_id y nombre."""
-    return call_api("GET", "/admin/proveedores/", max_items=MAX_ADMIN_LIST_ITEMS, max_chars=50000)
+    return call_api("GET", "/admin/proveedores/")
 
 
 def _construir_indice() -> dict:
@@ -383,7 +383,7 @@ def _construir_indice() -> dict:
 
     logger.info("Cargando todos los proveedores desde admin...")
     # Sin page/page_size — el endpoint devuelve todo de una vez
-    result = call_api("GET", "/admin/proveedores/", max_items=2000, max_chars=500000, timeout=120)
+    result = call_api("GET", "/admin/proveedores/", timeout=120)
     text = result.get("content", [{}])[0].get("text", "[]")
 
     index = {}

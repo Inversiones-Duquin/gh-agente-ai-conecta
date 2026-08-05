@@ -596,13 +596,12 @@ def ventas_por_clasificacion(dimension: str,
             {"text": f"Dimension '{dimension}' no soportada. Usa: {', '.join(dims_validas)}."}
         ]}
 
-    # limit alto para recibir todo
+    # Sin limit — el API devuelve todo
     result = call_api("GET", "/ventas/por-clasificacion", {
         dimension: filtro,
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta,
         "id_co": id_co,
-        "limit": 10000,
         "orden": "desc",
         "ordenar_por": ordenar_por,
     }, timeout=REQUEST_TIMEOUT_SLOW)

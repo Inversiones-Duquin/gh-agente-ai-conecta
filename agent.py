@@ -65,7 +65,7 @@ INFERENCE_PROFILE_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 # Ruteo por complejidad
 MODEL_NOVA_MICRO = "us.amazon.nova-micro-v1:0"                    # Orquestador (gratis/casi)
 MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"       # Baja complejidad
-MODEL_SONNET = "us.anthropic.claude-sonnet-4-20250514-v1:0"     # Alta complejidad
+MODEL_SONNET = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"     # Alta complejidad
 
 # Prompt del clasificador (sin herramientas, solo clasifica la intencion)
 CLASSIFIER_PROMPT = """Clasifica la solicitud del usuario en EXACTAMENTE una categoria. Responde SOLO con la palabra clave.

@@ -16,9 +16,6 @@ SECRET_NAME = os.getenv("DW_API_SECRET_NAME", "")
 TOKEN_TTL = 1500
 REQUEST_TIMEOUT = 120
 REQUEST_TIMEOUT_SLOW = 120
-MAX_RESPONSE_CHARS = 500000
-MAX_LIST_ITEMS = 5000
-MAX_ADMIN_LIST_ITEMS = 5000
 
 _token_cache: Optional[str] = None
 _token_loaded_at: float = 0.0
@@ -56,9 +53,8 @@ def get_token(region: str = "us-east-2") -> str:
 
 
 def call_api(method: str, path: str, params: Optional[Dict[str, Any]] = None,
-             body: Optional[Dict[str, Any]] = None, timeout: int = REQUEST_TIMEOUT,
-             max_items: int = MAX_LIST_ITEMS, max_chars: int = MAX_RESPONSE_CHARS) -> Dict[str, Any]:
-    """Llama endpoint i2d_dw con Bearer token, trunca y limita arrays."""
+             body: Optional[Dict[str, Any]] = None, timeout: int = REQUEST_TIMEOUT) -> Dict[str, Any]:
+    """Llama endpoint i2d_dw con Bearer token. Sin truncamiento."""
     token = get_token()
     url = f"{BASE_URL}{API_PREFIX}{path}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
@@ -101,31 +97,8 @@ def call_api(method: str, path: str, params: Optional[Dict[str, Any]] = None,
             name = err_map.get(resp.status_code, "SERVER_ERROR")
             return error_response(name, method=method, path=path, status=resp.status_code)
 
-        # Truncar arrays
-        total_items = 0; array_key_found = None
-        if isinstance(data, list):
-            total_items = len(data); data = {"data": data}; array_key_found = "data"
-        elif isinstance(data, dict):
-            for key in ("datos", "data", "items"):
-                if key in data and isinstance(data[key], list):
-                    total_items = len(data[key]); array_key_found = key; break
-
-        if array_key_found and total_items > max_items:
-            data[array_key_found] = data[array_key_found][:max_items]
-            data["_truncado"] = True; data["_total_registros"] = total_items; data["_mostrados"] = max_items
-
-        text = json.dumps(data, ensure_ascii=False)
-
-        while len(text) > max_chars and array_key_found and len(data.get(array_key_found, [])) > 5:
-            keep = max(5, len(data[array_key_found]) // 2)
-            data[array_key_found] = data[array_key_found][:keep]
-            data["_truncado"] = True; data["_total_registros"] = total_items; data["_mostrados"] = keep
-            text = json.dumps(data, ensure_ascii=False)
-
-        if len(text) > max_chars:
-            text = text[:max_chars - 20] + '..."}}'
-
-        return {"status": "success", "content": [{"text": text}]}
+        # Sin truncamiento — las tools procesan totales internamente
+        return {"status": "success", "content": [{"text": json.dumps(data, ensure_ascii=False)}]}
 
     except requests.exceptions.Timeout:
         return error_response("TIMEOUT", method=method, path=path)
@@ -155,7 +128,6 @@ def download_all(path: str, params: dict, *,
     except (ValueError, TypeError):
         # Sin fechas: llamada unica con el maximo del API
         p = dict(params)
-        p["limit"] = 500
         p["orden"] = "desc"
         r = call_api("GET", path, p, timeout=timeout)
         raw = r.get("content", [{}])[0].get("text", "{}")
@@ -176,7 +148,6 @@ def download_all(path: str, params: dict, *,
         p = dict(params)
         p["fecha_desde" if "fecha_desde" in params else "fecha_inicio"] = chunk_start.strftime("%Y-%m-%d")
         p["fecha_hasta" if "fecha_hasta" in params else "fecha_fin"] = chunk_end.strftime("%Y-%m-%d")
-        p["limit"] = 500  # Maximo que acepta el API
         p["orden"] = "desc"
 
         r = call_api("GET", path, p, timeout=timeout)
