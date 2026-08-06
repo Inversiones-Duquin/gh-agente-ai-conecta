@@ -11,7 +11,6 @@ from i2dw.dw_ventas import (
     ventas_por_medio_pago as _ventas_por_medio_pago,
     ventas_por_clasificacion as _ventas_por_clasificacion,
     ticket_promedio as _ticket_promedio,
-    rotacion_inventario as _rotacion_inventario,
     inventario_dias as _inventario_dias,
     comparar_ventas as _comparar_ventas,
     comparar_productos as _comparar_productos,
@@ -27,8 +26,7 @@ from i2dw.dw_proveedores import (obtener_reporte_proveedores as _obtener_reporte
                                    buscar_proveedor_por_nombre as _buscar_proveedor_por_nombre,
                                    productos_estancados as _productos_estancados,
                                    venta_cero_por_centro as _venta_cero_por_centro,
-                                   ranking_proveedores_venta_cero as _ranking_proveedores_venta_cero,
-                                   reporte_proveedor_top as _reporte_proveedor_top)
+                                   ranking_proveedores_venta_cero as _ranking_proveedores_venta_cero)
 
 
 # -- @tool wrappers ----------------------------------------------------------
@@ -129,15 +127,15 @@ def dw_buscar_ventas(producto: str, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, limite: int = 5) -> dict:
     """[SOLO PARA PRODUCTOS] Busca cuanto vendio un PRODUCTO por nombre. 1 sola llamada.
     USA: 'cuanto vendio el ventilador X?', 'ventas de olla a presion?'.
-    NO usar para categorias, marcas, secciones o proveedores — para esos usa dw_ventas_por_dimension."""
+    NO usar para categorias, marcas, secciones o proveedores — para esos usa dw_ventas_por_clasificacion."""
     return _buscar_ventas(producto, fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
 def dw_top_productos(limite: int, fecha_desde: str, fecha_hasta: str,
                       id_co: Optional[int] = None, ordenar_por: str = "venta_neta") -> dict:
-    """[RANKINGS DE PRODUCTOS] Top N productos mas vendidos en un periodo.
-    ordenar_por: 'venta_neta' (default), 'cantidad' o 'costo'.
-    USA para: 'top 10 productos', 'los mas vendidos del mes', 'ranking de productos'."""
+    """[RANKINGS DE PRODUCTOS] Top N productos en un periodo.
+    ordenar_por: 'venta_neta' (default, ranking por ingresos), 'cantidad' (ranking por UNIDADES vendidas, rotacion), 'costo'.
+    USA para: 'top 10 productos', 'los mas vendidos', 'ranking de productos', 'productos con mas rotacion en ventas'."""
     return _top_productos(limite, fecha_desde, fecha_hasta, id_co, ordenar_por)
 
 @tool
@@ -165,9 +163,9 @@ def dw_ventas_por_dimension(dimension: str, fecha_desde: str, fecha_hasta: str,
     Usa ULTIMO_MES_COMPLETO de fecha_actual() como periodo por defecto.
     dimension: 'co', 'categoria', 'subcategoria', 'seccion', 'marca', 'proveedor', 'producto', 'ciudad'
     Combina: 'co,categoria', 'ciudad,categoria', 'co,producto'
-    filtro: texto para buscar en resultados (ej: 'CONGELADOS', 'BAZURTO').
+    filtro: texto para buscar en resultados (ej: 'BAZURTO').
     USA filtro cuando pregunten por una entidad especifica dentro de una dimension.
-    Ej: 'en que tiendas se vendio CONGELADOS?' -> dimension='co,categoria', filtro='CONGELADOS'
+    Para marcas/categorias/subcategorias/secciones CONFIRMADAS usa dw_ventas_por_clasificacion.
     NO inventes fechas. Sin fecha explicita -> fecha_actual() primero."""
     return _ventas_por_dimension(dimension, fecha_desde, fecha_hasta, id_co, limit, orden, ordenar_por, filtro)
 
@@ -227,19 +225,11 @@ def dw_rotacion_articulos(q: Optional[str] = None,
 
 
 @tool
-def dw_rotacion_inventario(fecha_desde: str, fecha_hasta: str,
-                            id_co: Optional[int] = None, limite: int = 20) -> dict:
-    """[ROTACION POR VENTAS] Ranking de productos por unidades vendidas.
-    USA para: 'productos mas vendidos?', 'que productos mas rotan en ventas?'.
-    Muestra unidades vendidas Y venta_neta. NO usar para stock — para eso usa dw_rotacion_articulos."""
-    return _rotacion_inventario(fecha_desde, fecha_hasta, id_co, limite)
-
-@tool
 def dw_inventario_dias(fecha_desde: str, fecha_hasta: str,
                         id_co: Optional[int] = None, limite: int = 50) -> dict:
     """[ROTACION DE INVENTARIO] Dias de inventario por producto. Control financiero.
-    USA para: 'rotacion de inventario', 'dias de inventario', 'productos con sobrestock'.
-    NO confundir con dw_rotacion_inventario (ranking por unidades vendidas)."""
+    USA para: 'dias de inventario', 'productos con sobrestock'.
+    NO confundir con ranking de ventas — para eso usa dw_top_productos ordenar_por='cantidad'."""
     return _inventario_dias(fecha_desde, fecha_hasta, id_co, limite)
 
 @tool
@@ -278,12 +268,6 @@ def dw_ranking_proveedores_venta_cero(dia_periodo_inferior: int = 0,
 
 
 @tool
-def dw_reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
-                               proveedor_id: str, ordenar_por: str = "cantidad") -> dict:
-    """Top productos de un proveedor especifico."""
-    return _reporte_proveedor_top(limite, fecha_desde, fecha_hasta, proveedor_id, ordenar_por)
-
-@tool
 def dw_comparar_productos(fecha_desde: str, fecha_hasta: str,
                             comparar_con: str, limite: int = 10) -> dict:
     """[PRODUCTOS QUE CRECEN O CAEN] Compara CADA PRODUCTO entre dos periodos. 1 SOLA llamada.
@@ -303,8 +287,7 @@ DW_TOOLS = [
     dw_buscar_proveedor_por_nombre,
     dw_ticket_promedio, dw_inventario_por_bodega, dw_inventario_productos_por_bodega,
     dw_inventario_por_centro,
-    dw_rotacion_articulos, dw_rotacion_inventario, dw_inventario_dias,
+    dw_rotacion_articulos, dw_inventario_dias,
     dw_productos_estancados, dw_venta_cero_por_centro, dw_ranking_proveedores_venta_cero,
-    dw_reporte_proveedor_top,
     dw_comparar_productos,
 ]

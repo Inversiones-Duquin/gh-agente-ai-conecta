@@ -9,16 +9,14 @@ Knowledge Base, Data Warehouse y generación de reportes.
 import sys
 import os
 
-# Necesario para que las librerías (pydantic, strands, dateutil, etc.)
-# encuentren six.py y typing_extensions.py que están en /libs
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
-# Necesario para que los modulos en mcps/ sean importables
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps"))
+# Necesario para importar los modulos DW desde mcps/i2dw/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps", "i2dw"))
 
 import logging
+import re
 import time
 import traceback
+import uuid as _uuid
 from typing import Optional
 
 from boto3.dynamodb.conditions import Attr
@@ -35,11 +33,7 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import (
     AgentCoreMemorySessionManager, )
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from helpers import extract_prompt_and_session, log_payload_debug
-from mcp_tools import (
-    build_mcp_prompt_section,
-    get_agent_tools,
-    init_mcp_client,
-)
+from dw_tools import DW_TOOLS
 from prompts import DEFAULT_SYSTEM_PROMPT
 from strands import Agent, tool
 
@@ -60,21 +54,6 @@ app = BedrockAgentCoreApp()
 MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-2")
 MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-INFERENCE_PROFILE_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-
-# Ruteo por complejidad
-MODEL_NOVA_MICRO = "us.amazon.nova-micro-v1:0"                    # Orquestador (gratis/casi)
-MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"       # Baja complejidad
-MODEL_SONNET = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"     # Alta complejidad
-
-# Prompt del clasificador (sin herramientas, solo clasifica la intencion)
-CLASSIFIER_PROMPT = """Clasifica la solicitud del usuario en EXACTAMENTE una categoria. Responde SOLO con la palabra clave.
-
-Categorias:
-- greeting: Saludo, agradecimiento, despedida, "hola", "gracias", "como estas", ayuda basica.
-- report: Reporte de ventas, KPIs, top productos, ranking, comparativas, inventario, rotacion, Excel, PDF.
-- analysis: Analisis gerencial, explicacion compleja, recomendacion estrategica, diagnostico, "por que", "como mejorar".
-- large: Solicitud muy amplia o sin filtros (ej: "dame todas las ventas", "todo el año", "todos los productos")."""
 
 PROMPT_TABLE = os.getenv("PROMPT_TABLE_NAME", "")
 PROMPT_ID = os.getenv("PROMPT_ID", "")
@@ -95,23 +74,12 @@ DW_API_ID_CIA_DEFAULT = os.getenv("DW_API_ID_CIA_DEFAULT", "1")
 DW_API_MAX_ROWS = int(os.getenv("DW_API_MAX_ROWS", "50"))
 DW_API_TIMEOUT = int(os.getenv("DW_API_REQUEST_TIMEOUT", "60"))
 
-REPORTS_GATEWAY_ID = os.getenv("REPORTS_GATEWAY_ID",
-                               "reports-gateway-yt5gh2old4")
-REPORTS_GATEWAY_REGION = os.getenv("REPORTS_GATEWAY_REGION", "us-east-2")
-
-MCP_GATEWAY_ID = os.getenv("MCP_GATEWAY_ID", "i2d-dw-gateway-lv6e91yj9s")
-MCP_GATEWAY_REGION = os.getenv("MCP_GATEWAY_REGION", "us-east-2")
-
 # =============================================================================
-# Estado global
+# Estado global — cache del system prompt
 # =============================================================================
-current_session: Optional[str] = None
 _prompt_cache: Optional[str] = None
 _prompt_source: Optional[str] = None
 _prompt_loaded_at: float = 0.0
-
-# Inicializar MCP (no bloquea si falla)
-init_mcp_client(MCP_GATEWAY_ID, MCP_GATEWAY_REGION)
 
 
 # =============================================================================
@@ -254,19 +222,16 @@ def search_knowledge_base(query: str) -> dict:
 # =============================================================================
 @tool
 def fecha_actual() -> dict:
-    """[LLAMAR SIEMPRE PRIMERO] Retorna la fecha actual y el ULTIMO_MES_COMPLETO pre-calculado.
+    """[SOLO PARA FECHAS RELATIVAS] Retorna la fecha actual y el ULTIMO_MES_COMPLETO.
+    Llama SOLO cuando el usuario NO da fechas explicitas. Si el usuario menciono mes/año, usa SUS fechas.
     Para 'ultimo mes' o 'mes pasado' usa las fechas que aparecen en ULTIMO_MES_COMPLETO.
     NO calcules fechas manualmente — usa los valores exactos de esta herramienta."""
-    import json
     from datetime import datetime, timedelta
     hoy = datetime.now()
 
-    # Inicio y fin de periodos comunes
     inicio_mes_actual = hoy.replace(day=1)
     fin_mes_anterior = inicio_mes_actual - timedelta(days=1)
     inicio_mes_anterior = fin_mes_anterior.replace(day=1)
-    inicio_semana = hoy - timedelta(days=hoy.weekday())
-    inicio_trimestre = hoy.replace(month=((hoy.month - 1) // 3) * 3 + 1, day=1)
 
     periodos = {
         "hoy":
@@ -349,106 +314,30 @@ def generar_reporte_ventas(id_co: int,
         }
 
 
-@tool
-def generar_reporte_comparativo(id_co: int, fecha_desde_1: str,
-                                fecha_hasta_1: str, fecha_desde_2: str,
-                                fecha_hasta_2: str) -> dict:
-    """Genera reporte HTML comparativo entre dos periodos. KPIs duales, graficos overlay, tabla con variacion %.
-    USA para: 'compara junio vs mayo', 'reporte comparativo Bazurto', 'como vamos vs mes pasado'.
-
-    Args:
-        id_co: ID del centro de operaciones (ej: 1 para Bazurto).
-        fecha_desde_1: Inicio periodo actual YYYY-MM-DD.
-        fecha_hasta_1: Fin periodo actual YYYY-MM-DD.
-        fecha_desde_2: Inicio periodo anterior YYYY-MM-DD.
-        fecha_hasta_2: Fin periodo anterior YYYY-MM-DD.
-
-    Retorna URL de descarga del reporte comparativo."""
-    try:
-        return _invoke_reports_lambda(
-            "generar_reporte_comparativo", {
-                "id_co": id_co,
-                "fecha_desde_1": fecha_desde_1,
-                "fecha_hasta_1": fecha_hasta_1,
-                "fecha_desde_2": fecha_desde_2,
-                "fecha_hasta_2": fecha_hasta_2,
-            })
-    except Exception as e:
-        logger.error("Error generando reporte comparativo: %s", e)
-        return {
-            "status": "error",
-            "content": [{
-                "text": "El servicio de reportes no esta disponible."
-            }]
-        }
-
-
-# =============================================================================
-# Clasificador de solicitudes — decide que modelo usar
-# =============================================================================
-def classify_request(prompt: str) -> tuple:
-    """Clasifica la solicitud con Nova Lite (rapido, barato).
-    Retorna (categoria, modelo_sugerido)."""
-    import boto3 as _boto3
-    try:
-        br = _boto3.client("bedrock-runtime", region_name=REGION)
-        resp = br.converse(
-            modelId=MODEL_NOVA_MICRO,
-            messages=[{
-                "role": "user",
-                "content": [{
-                    "text": prompt
-                }]
-            }],
-            system=[{
-                "text": CLASSIFIER_PROMPT
-            }],
-            inferenceConfig={
-                "maxTokens": 10,
-                "temperature": 0.0
-            },
-        )
-        category = resp["output"]["message"]["content"][0]["text"].strip(
-        ).lower()
-        # Normalizar
-        if "greeting" in category:
-            return ("greeting", MODEL_HAIKU)
-        elif "report" in category:
-            return ("report", MODEL_SONNET)      # Alta complejidad
-        elif "analysis" in category:
-            return ("analysis", MODEL_SONNET)    # Alta complejidad
-        elif "large" in category:
-            return ("large", None)
-        else:
-            return ("report", MODEL_HAIKU)       # Default: baja complejidad
-    except Exception as e:
-        logger.warning("Clasificador fallo: %s — usando Haiku", e)
-        return ("report", MODEL_HAIKU)
-
-
 # =============================================================================
 # Resiliencia — sanitizacion, retry, fallback
 # =============================================================================
-import re
-import uuid as _uuid
 
 TOOL_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
 MAX_RETRIES = 3
-BACKOFF_BASE = 1
+BACKOFF_BASE = 2
 
 
 def _is_session_toxic(session_mgr, session_id) -> bool:
-    """Detecta sesiones problematicas: >10 eventos o tool calls huerfanas.
-    Sesiones con muchos reintentos fallidos se vuelven toxicas para ConverseStream."""
+    """Detecta sesiones con tool calls huerfanas."""
     try:
-        events = session_mgr.repository.get(session_id, [])
-        total = len(events)
-        tool_uses = sum(1 for e in events if any("toolUse" in b for b in e.get("content", [])))
-        tool_results = sum(1 for e in events if any("toolResult" in b for b in e.get("content", [])))
-        # Si hay mas toolUse que toolResult → huerfano → sesion toxica
-        # O si hay >10 eventos (muchos reintentos fallidos)
-        return total > 10 or tool_uses > tool_results
-    except Exception:
+        msgs = session_mgr.list_messages(session_id, "default") or []
+        tool_uses = 0
+        tool_results = 0
+        for m in msgs:
+            content = m.to_message().get("content", [])
+            for b in content:
+                if isinstance(b, dict):
+                    if "toolUse" in b: tool_uses += 1
+                    if "toolResult" in b: tool_results += 1
+        return tool_uses > tool_results
+    except Exception as e:
+        logger.warning("No se pudo verificar sesion: %s", e)
         return False
 
 
@@ -469,12 +358,8 @@ def _sanitize_tool_ids(result):
     return result
 
 
-def _invoke_agent_with_retry(agent, prompt, model_id):
-    """Invoca el agente con 3 niveles de defensa:
-    1. Normal
-    2. Retry tras sanitizar tool IDs
-    3. Fallback sin tools (solo texto)"""
-    import time as _time
+def _invoke_agent_with_retry(agent, prompt):
+    """Invoca el agente con retry para throttling y session corruption."""
     last_error = None
 
     for attempt in range(MAX_RETRIES):
@@ -485,19 +370,18 @@ def _invoke_agent_with_retry(agent, prompt, model_id):
             last_error = e
             error_str = str(e)
 
-            if "toolUse" in error_str and "toolResult" in error_str:
-                logger.warning("Tool ID mismatch — retry %d/%d", attempt + 1, MAX_RETRIES)
-                _time.sleep(BACKOFF_BASE ** attempt)
-                continue
+            # Session corrupta → señal para nueva sesion
+            if "ValidationException" in type(e).__name__ and ("toolUse" in error_str or "toolResult" in error_str):
+                logger.warning("Session corrupta (intento %d/%d)", attempt + 1, MAX_RETRIES)
+                return None, last_error  # ← caller recrea sesion
             elif "Throttling" in error_str or "throttling" in error_str.lower():
                 wait = BACKOFF_BASE ** attempt
                 logger.warning("Throttled — esperando %ds (intento %d/%d)", wait, attempt + 1, MAX_RETRIES)
-                _time.sleep(wait)
+                time.sleep(wait)
                 continue
             else:
                 break
 
-    # Fallback: si el error persiste, devolver el error
     logger.error("Agente fallo tras %d intentos: %s", MAX_RETRIES, last_error)
     return None, last_error
 
@@ -508,7 +392,6 @@ def _invoke_agent_with_retry(agent, prompt, model_id):
 @app.entrypoint
 def invoke(payload, context):
     """Handler principal — procesa cada solicitud del agente."""
-    global current_session
 
     if payload is None:
         return {"error": "Payload is None"}
@@ -527,36 +410,17 @@ def invoke(payload, context):
     if not MEMORY_ID:
         return {"error": "Memory not configured"}
 
-    current_session = session_id
-
-    # Ruteo de modelo segun complejidad
-    category, suggested_model = classify_request(prompt)
-    logger.info("Clasificacion: '%s' → modelo=%s", category, suggested_model
-                or "PEDIR_FILTROS")
-
-    # Solicitud muy amplia → pedir filtros
-    if suggested_model is None:
-        return {
-            "response":
-            ("Tu solicitud es muy amplia y puede generar un error por exceso de datos. "
-             "Por favor, acota la consulta con alguno de estos filtros:\n"
-             "- Un rango de fechas especifico (ej: 'junio 2026', 'ultima semana')\n"
-             "- Una tienda o centro de operacion (ej: 'Bazurto', 'Castellana')\n"
-             "- Una categoria, marca o proveedor especifico\n"
-             "- Un limite de resultados (ej: 'top 10', 'top 20')\n\n"
-             "¿Puedes reformular tu consulta?")
-        }
-
     try:
         actor_id = (context.headers.get(
             "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Actor-Id", "user")
                     if hasattr(context, "headers") else "user")
 
-        # Memoria
+        # Memoria con limpieza de tool calls al restaurar sesion
         memory_config = AgentCoreMemoryConfig(
             memory_id=MEMORY_ID,
             session_id=session_id,
             actor_id=actor_id,
+            filter_restored_tool_context=True,
             retrieval_config={
                 f"/users/{actor_id}/facts":
                 RetrievalConfig(top_k=AGENT_MEMORY_TOP_K, relevance_score=0.5),
@@ -565,66 +429,31 @@ def invoke(payload, context):
             },
         )
 
-        # System prompt + MCP (con prompt caching)
-        system_prompt = get_system_prompt()
-        mcp_section = build_mcp_prompt_section()
-        if mcp_section:
-            system_prompt += "\n" + mcp_section
+        system_prompt = [{"text": get_system_prompt()}]
 
-        # Herramientas
-        tools = get_agent_tools() + [
+        # Herramientas: DW (24) + KB + fecha + reportes
+        tools = DW_TOOLS + [
             search_knowledge_base, fecha_actual, generar_reporte_ventas
         ]
         session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
 
-        # Detectar sesion con tool calls huerfanas de intentos previos fallidos
-        if _is_session_toxic(session_mgr, session_id):
-            logger.warning("Sesion %s corrupta — creando nueva sesion", session_id)
-            session_id = str(_uuid.uuid4())
-            memory_config.session_id = session_id
-            session_mgr = AgentCoreMemorySessionManager(memory_config, REGION)
-
-        # Modelo seleccionado por el clasificador (o default si fallo)
-        model_id = suggested_model or INFERENCE_PROFILE_ID or MODEL_ID
-
-        # System prompt con cache point solo para modelos que lo soportan
-        # Claude + Nova: soportan prompt caching nativo en Bedrock
-        # Solo Claude y Nova soportan prompt caching en Bedrock
-        model_lower = model_id.lower()
-        supports_cache = any(m in model_lower for m in ("claude", "nova"))
-        if supports_cache:
-            cached_system_prompt = [
-                {
-                    "text": system_prompt
-                },
-                {
-                    "cachePoint": {
-                        "type": "default"
-                    }
-                },
-            ]
-        else:
-            cached_system_prompt = [{"text": system_prompt}]
-
-        # Modelo con max_tokens explícito para optimizar cuota (Critical Warning de Bedrock)
+        # Modelo unico — sin clasificador
         from strands.models.bedrock import BedrockModel
-        model = BedrockModel(model_id=model_id, max_tokens=4096, temperature=0)
+        model = BedrockModel(model_id=MODEL_ID, max_tokens=4096, temperature=0)
 
         agent = Agent(model=model,
                       session_manager=session_mgr,
-                      system_prompt=cached_system_prompt,
+                      system_prompt=system_prompt,
                       tools=tools)
 
-        logger.info("Ejecutando — model=%s, category=%s, tools=%d", model_id,
-                    category, len(tools))
+        logger.info("Ejecutando — model=%s, tools=%d", MODEL_ID, len(tools))
 
         # Invocar con retry + sanitizacion de tool IDs
-        result, agent_error = _invoke_agent_with_retry(agent, prompt, model_id)
+        result, agent_error = _invoke_agent_with_retry(agent, prompt)
 
         if agent_error is not None:
             raise agent_error
 
-        # Usar AgentResult.__str__() que itera TODOS los content blocks buscando texto
         response_text = str(result).strip()
 
         if not response_text:
@@ -634,21 +463,9 @@ def invoke(payload, context):
                 len(result.message.get("content", [])), len(prompt),
                 session_id)
 
-        # Extraer stats de cache del response
-        cache_tokens = 0
-        total_tokens = 0
-        try:
-            usage = result.message.get("usage", {})
-            cache_tokens = usage.get("cacheReadInputTokens", 0)
-            total_tokens = usage.get("inputTokens", 0)
-        except (AttributeError, KeyError, TypeError):
-            pass
-
-        cache_pct = f", cache={cache_tokens}/{total_tokens} ({round(cache_tokens/total_tokens*100,1)}%)" if total_tokens > 0 else ""
         logger.info(
-            "OK — sessionId=%s, model=%s, category=%s, prompt_len=%d, response_len=%d%s",
-            session_id, model_id, category, len(prompt), len(response_text),
-            cache_pct)
+            "OK — sessionId=%s, prompt_len=%d, response_len=%d",
+            session_id, len(prompt), len(response_text))
 
         return {"response": response_text}
 

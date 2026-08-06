@@ -9,7 +9,6 @@ import boto3
 _bedrock_agent_runtime = None
 _dynamodb_resource = None
 _secrets_client = None
-_lambda_client = None
 
 
 # ---------------------------------------------------------------------------
@@ -41,11 +40,3 @@ def get_secrets_client(region: str):
     if _secrets_client is None and region:
         _secrets_client = boto3.client("secretsmanager", region_name=region)
     return _secrets_client
-
-
-def get_lambda_client(region: str):
-    """Cliente de Lambda (generación de reportes)."""
-    global _lambda_client
-    if _lambda_client is None and region:
-        _lambda_client = boto3.client("lambda", region_name=region)
-    return _lambda_client

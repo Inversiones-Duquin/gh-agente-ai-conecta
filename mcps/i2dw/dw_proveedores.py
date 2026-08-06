@@ -369,11 +369,6 @@ def reporte_proveedor_top(limite: int, fecha_desde: str, fecha_hasta: str,
                     "fecha_fin": fecha_hasta, "proveedor_id": proveedor_id, "ordenar_por": ordenar_por},
                     timeout=REQUEST_TIMEOUT_SLOW)
 
-def listar_proveedores() -> dict:
-    """Lista proveedores admin con criterio_mayor_id y nombre."""
-    return call_api("GET", "/admin/proveedores/")
-
-
 def _construir_indice() -> dict:
     """Indice desde /admin/proveedores/ (sin paginacion — endpoint devuelve todo). Cache 1h."""
     global _index_cache, _index_ts
