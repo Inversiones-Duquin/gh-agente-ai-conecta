@@ -9,7 +9,8 @@ Knowledge Base, Data Warehouse y generación de reportes.
 import sys
 import os
 
-# Necesario para importar los modulos DW desde mcps/i2dw/
+# Necesario para importar los modulos DW (i2dw como paquete + acceso directo)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "mcps", "i2dw"))
 
 import logging
